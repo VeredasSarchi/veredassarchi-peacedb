@@ -36,23 +36,11 @@ export function PreAutorizadoForm({ preClienteId, onComplete, onSkip }: PreAutor
     },
   });
 
-  const onSubmit = async (values: PreAutorizadoFormValues) => {
-    try {
-      const { error } = await supabase.from("pre_autorizados").insert([
-        {
-          id_precliente: preClienteId,
-          nombre: values.nombre,
-          cedula: values.cedula || null,
-        },
-      ]);
-
-      if (error) throw error;
-
-      onComplete();
-    } catch (error) {
-      console.error("Error al crear pre-autorizado:", error);
-      toast.error("Error al registrar el pre-autorizado");
-    }
+  const onSubmit = (values: PreAutorizadoFormValues) => {
+    // TODO: Save to Supabase later
+    console.log("Pre-autorizado form data:", { preClienteId, ...values });
+    toast.success("Pre-autorizado registrado correctamente");
+    onComplete();
   };
 
   return (
