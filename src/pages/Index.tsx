@@ -7,13 +7,13 @@ const Index = () => {
   const navigate = useNavigate();
 
   return (
-    <div className="min-h-screen bg-background p-4 md:p-8">
+    <div className="min-h-screen bg-secondary p-4 md:p-8">
       <div className="mx-auto max-w-6xl">
         <div className="mb-8">
-          <h1 className="text-4xl font-bold text-foreground mb-2">
-            Jardines de Paz VeredasSarchi
+          <h1 className="text-4xl font-bold text-primary mb-2">
+            Campo Santo Veredas de Paz Sarchí
           </h1>
-          <p className="text-xl text-muted-foreground">
+          <p className="text-xl text-secondary-foreground/80">
             Sistema de Gestión Integral
           </p>
         </div>
