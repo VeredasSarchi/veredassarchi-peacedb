@@ -16,13 +16,6 @@ export const Navigation = () => {
     <nav className="bg-secondary border-b border-border">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <div className="flex h-16 items-center justify-between">
-          <div className="flex items-center">
-            <Link to="/" className="flex items-center">
-              <h1 className="text-lg font-bold text-primary">
-                Campo Santo Veredas de Paz Sarchí
-              </h1>
-            </Link>
-          </div>
           <div className="flex items-center space-x-4">
             {navigationItems.map((item) => {
               const isActive = location.pathname === item.path;
