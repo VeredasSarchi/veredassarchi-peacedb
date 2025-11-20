@@ -13,11 +13,11 @@ const Index = () => {
       <div className="min-h-screen bg-secondary p-4 md:p-8">
         <div className="mx-auto max-w-6xl">
           <div className="mb-8">
-            <h1 className="text-4xl font-bold text-primary mb-2">
-              Campo Santo Veredas de Paz Sarchí
+            <h1 className="text-3xl font-bold text-primary mb-2">
+              Sistema de Gestión
             </h1>
-            <p className="text-xl text-secondary-foreground/80">
-              Sistema de Gestión Integral
+            <p className="text-lg text-secondary-foreground/80">
+              Seleccione el módulo con el que desea trabajar
             </p>
           </div>
 
