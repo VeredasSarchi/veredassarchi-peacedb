@@ -1,53 +1,47 @@
-import { Link, useLocation } from "react-router-dom";
-import { Home, FileText, Users, Building2 } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { Link, useNavigate } from "react-router-dom";
+import { useAuth } from "@/auth/AuthContext";
+import { supabase } from "@/integrations/supabase/client";
+import { Button } from "@/components/ui/button";
 
-const navigationItems = [
-  { name: "Inicio", path: "/", icon: Home },
-  { name: "Precontratos", path: "/precontratos", icon: FileText },
-  { name: "Clientes", path: "/clientes", icon: Users, disabled: true },
-  { name: "Jardines", path: "/jardines", icon: Building2, disabled: true },
-];
+export default function Navigation() {
+  const { user, role } = useAuth();
+  const navigate = useNavigate();
 
-export const Navigation = () => {
-  const location = useLocation();
+  async function handleLogout() {
+    await supabase.auth.signOut();
+    navigate("/login", { replace: true });
+  }
 
   return (
-    <nav className="bg-secondary border-b border-border">
-      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-        <div className="flex h-16 items-center justify-between">
-          <div className="flex items-center space-x-4">
-            {navigationItems.map((item) => {
-              const isActive = location.pathname === item.path;
-              const Icon = item.icon;
-              
-              return item.disabled ? (
-                <div
-                  key={item.name}
-                  className="flex items-center gap-2 px-3 py-2 text-sm text-secondary-foreground/40 cursor-not-allowed"
-                >
-                  <Icon className="h-4 w-4" />
-                  <span className="hidden sm:inline">{item.name}</span>
-                </div>
-              ) : (
-                <Link
-                  key={item.name}
-                  to={item.path}
-                  className={cn(
-                    "flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-colors",
-                    isActive
-                      ? "bg-primary text-primary-foreground"
-                      : "text-secondary-foreground hover:bg-secondary-foreground/10"
-                  )}
-                >
-                  <Icon className="h-4 w-4" />
-                  <span className="hidden sm:inline">{item.name}</span>
-                </Link>
-              );
-            })}
-          </div>
-        </div>
+    <nav className="w-full flex items-center justify-between px-4 py-2 border-b bg-white">
+      <div className="flex gap-4 items-center">
+        <span className="font-bold">Veredas Sarchí</span>
+
+        {user && (
+          <>
+            <Link to="/" className="text-sm hover:underline">
+              Inicio
+            </Link>
+
+            <Link to="/precontratos" className="text-sm hover:underline">
+              Pre-contratos
+            </Link>
+          </>
+        )}
+      </div>
+
+      <div className="flex items-center gap-3">
+        {user && (
+          <>
+            <span className="text-xs text-slate-500">
+              {role?.toUpperCase()} · {user.email}
+            </span>
+            <Button size="sm" variant="outline" onClick={handleLogout}>
+              Cerrar sesión
+            </Button>
+          </>
+        )}
       </div>
     </nav>
   );
-};
+}

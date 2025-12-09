@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { CheckCircle2 } from "lucide-react";
 import { toast } from "sonner";
-import { Navigation } from "@/components/Navigation";
+import Navigation from "@/components/Navigation";
 
 type FormStep = "pre_cliente" | "pre_autorizado" | "beneficiario" | "complete";
 

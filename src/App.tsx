@@ -1,29 +1,64 @@
-import { Toaster } from "@/components/ui/toaster";
-import { Toaster as Sonner } from "@/components/ui/sonner";
-import { TooltipProvider } from "@/components/ui/tooltip";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
-import Index from "./pages/Index";
-import Precontratos from "./pages/Precontratos";
-import NotFound from "./pages/NotFound";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { useAuth } from "@/auth/AuthContext";
+import { ProtectedRoute } from "@/auth/ProtectedRoute";
 
-const queryClient = new QueryClient();
+import Login from "@/pages/Login";
+import Unauthorized from "@/pages/Unauthorized";
+import Precontratos from "@/pages/Precontratos";
+import Index from "@/pages/Index";
+import NotFound from "@/pages/NotFound";
+import Navigation from "@/components/Navigation";
 
-const App = () => (
-  <QueryClientProvider client={queryClient}>
-    <TooltipProvider>
-      <Toaster />
-      <Sonner />
-      <BrowserRouter>
+function AppLayout() {
+  const { user } = useAuth();
+
+  return (
+    <div className="min-h-screen bg-slate-50">
+      {user && <Navigation />}
+
+      <main className="mx-auto max-w-6xl px-4 py-6">
         <Routes>
-          <Route path="/" element={<Index />} />
-          <Route path="/precontratos" element={<Precontratos />} />
-          {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
+          {/* Login: si ya está logueado, lo mandamos al home */}
+          <Route
+            path="/login"
+            element={user ? <Navigate to="/" replace /> : <Login />}
+          />
+
+          {/* Home / Index: requiere estar logueado */}
+          <Route
+            path="/"
+            element={
+              <ProtectedRoute>
+                <Index />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* Aceptar también /index por si hay enlaces viejos */}
+          <Route path="/index" element={<Navigate to="/" replace />} />
+
+          {/* Precontratos: admin + vendedor */}
+          <Route
+            path="/precontratos"
+            element={
+              <ProtectedRoute allowedRoles={["admin", "vendedor"]}>
+                <Precontratos />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route path="/unauthorized" element={<Unauthorized />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
-      </BrowserRouter>
-    </TooltipProvider>
-  </QueryClientProvider>
-);
+      </main>
+    </div>
+  );
+}
 
-export default App;
+export default function App() {
+  return (
+    <BrowserRouter>
+      <AppLayout />
+    </BrowserRouter>
+  );
+}
