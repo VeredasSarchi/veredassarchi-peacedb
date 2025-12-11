@@ -25,11 +25,16 @@ export default function Login() {
 
     if (error) {
       console.error(error);
-      toast.error("Credenciales inválidas o error al iniciar sesión");
+      const message = (error.message || "").toLowerCase();
+      if (message.includes("invalid login credentials")) {
+        toast.error("Usuario no registrado, contactar a administracion.");
+      } else {
+        toast.error("Credenciales invalidas o error al iniciar sesion");
+      }
       return;
     }
 
-    toast.success("Sesión iniciada correctamente");
+    toast.success("Sesion iniciada correctamente");
 
     const userRole =
       (data.user?.app_metadata as any)?.role ??
@@ -39,24 +44,31 @@ export default function Login() {
     console.log("ROL DETECTADO:", userRole);
 
     if (userRole === "admin") {
-      navigate("/", { replace: true }); // 👈 admin va al home (/)
+      navigate("/", { replace: true });
     } else if (userRole === "vendedor") {
-      navigate("/precontratos", { replace: true });
+      navigate("/vendedor", { replace: true });
     } else {
       navigate("/unauthorized", { replace: true });
     }
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-slate-100">
-      <Card className="w-full max-w-md">
-        <CardHeader>
-          <CardTitle className="text-center">Ingreso al sistema</CardTitle>
+    <div className="min-h-screen flex items-center justify-center bg-background px-4">
+      <Card className="w-full max-w-md shadow-lg bg-card text-card-foreground">
+        <CardHeader className="space-y-1">
+          <CardTitle className="text-center text-2xl font-bold text-black">
+            Ingreso al sistema
+          </CardTitle>
+          <p className="text-center text-sm text-black">
+            Usa tus credenciales para acceder al panel
+          </p>
         </CardHeader>
         <CardContent>
           <form className="space-y-4" onSubmit={handleLogin}>
             <div>
-              <label className="block mb-1 text-sm font-medium">Correo</label>
+              <label className="block mb-1 text-sm font-bold text-black">
+                Correo
+              </label>
               <Input
                 type="email"
                 required
@@ -66,7 +78,9 @@ export default function Login() {
               />
             </div>
             <div>
-              <label className="block mb-1 text-sm font-medium">Contraseña</label>
+              <label className="block mb-1 text-sm font-bold text-black">
+                Contrasena
+              </label>
               <Input
                 type="password"
                 required

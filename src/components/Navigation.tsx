@@ -13,19 +13,22 @@ export default function Navigation() {
   }
 
   return (
-    <nav className="w-full flex items-center justify-between px-4 py-2 border-b bg-white">
+    <nav className="w-full flex items-center justify-between px-4 sm:px-6 py-3 border-b border-border bg-background text-foreground">
       <div className="flex gap-4 items-center">
-        <span className="font-bold">Veredas Sarchí</span>
+        <span className="font-bold">Veredas Sarchi</span>
 
         {user && (
           <>
-            <Link to="/" className="text-sm hover:underline">
-              Inicio
-            </Link>
-
-            <Link to="/precontratos" className="text-sm hover:underline">
-              Pre-contratos
-            </Link>
+            {role === "admin" && (
+              <Link to="/" className="text-sm hover:underline">
+                Inicio
+              </Link>
+            )}
+            {role === "vendedor" && (
+              <Link to="/vendedor" className="text-sm hover:underline">
+                Inicio
+              </Link>
+            )}
           </>
         )}
       </div>
@@ -33,11 +36,16 @@ export default function Navigation() {
       <div className="flex items-center gap-3">
         {user && (
           <>
-            <span className="text-xs text-slate-500">
-              {role?.toUpperCase()} · {user.email}
+            <span className="text-xs text-muted-foreground font-bold">
+              {role?.toUpperCase()} • {user.email}
             </span>
-            <Button size="sm" variant="outline" onClick={handleLogout}>
-              Cerrar sesión
+            <Button
+              size="sm"
+              variant="outline"
+              className="hover:bg-primary hover:text-primary-foreground"
+              onClick={handleLogout}
+            >
+              Cerrar sesion
             </Button>
           </>
         )}

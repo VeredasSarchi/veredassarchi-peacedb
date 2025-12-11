@@ -77,7 +77,7 @@ export function PreAutorizadoForm({ preClienteId, onComplete, onSkip }: PreAutor
         </div>
 
         <div className="flex justify-between">
-          <Button type="button" variant="outline" onClick={onSkip}>
+          <Button type="button" onClick={onSkip}> 
             Omitir
           </Button>
           <Button type="submit">Siguiente</Button>
