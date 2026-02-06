@@ -9,6 +9,8 @@ import Precontratos from "@/pages/Precontratos";
 import AdminHome from "@/pages/AdminHome";
 import VendedorHome from "@/pages/VendedorHome";
 import DashboardPreContratos from "@/pages/DashboardPreContratos";
+import Jardines from "@/pages/Jardines";
+import JardinDetalle from "@/pages/JardinDetalle";
 import NotFound from "@/pages/NotFound";
 import Navigation from "@/components/Navigation";
 
@@ -66,6 +68,24 @@ function AppLayout() {
             element={
               <ProtectedRoute allowedRoles={["admin", "vendedor"]}>
                 <DashboardPreContratos />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/jardines"
+            element={
+              <ProtectedRoute allowedRoles={["admin", "vendedor"]}>
+                <Jardines />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/jardines/:id"
+            element={
+              <ProtectedRoute allowedRoles={["admin", "vendedor"]}>
+                <JardinDetalle />
               </ProtectedRoute>
             }
           />

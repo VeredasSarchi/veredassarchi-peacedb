@@ -29,7 +29,7 @@ const AdminHome = () => {
       <div className="mx-auto w-full px-2 sm:px-4 lg:px-8">
         <div className="mb-8">
           <h1 className="text-4xl font-bold text-primary mb-2">
-            Campo Santo Veredas de Paz Sarchi
+            Veredas Sarchi-Poás
           </h1>
           <p className="text-xl text-secondary-foreground/80">
             Sistema de Gestion Integral
@@ -113,8 +113,9 @@ const AdminHome = () => {
               title: "Jardines, Lotes y Cenizarios",
               description: "Gestion de espacios, disponibilidad y ubicaciones.",
               icon: Trees,
+              action: () => navigate("/jardines"),
               actionLabel: "Acceder",
-              disabled: true,
+              disabled: false,
             },
           ].map((item) => (
             <Card

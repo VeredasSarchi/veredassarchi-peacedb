@@ -53,14 +53,17 @@ const VendedorHome = () => {
             </CardContent>
           </Card>
 
-          <Card className="relative overflow-hidden rounded-xl border border-primary/10 bg-gradient-to-br from-white/5 to-primary/5 shadow-md hover:shadow-xl hover:-translate-y-1 transition-all duration-200 before:absolute before:inset-x-0 before:top-0 before:h-1 before:bg-primary/60 before:opacity-70">
+          <Card
+            className="relative overflow-hidden rounded-xl border border-primary/10 bg-gradient-to-br from-white/5 to-primary/5 shadow-md hover:shadow-xl hover:-translate-y-1 transition-all duration-200 before:absolute before:inset-x-0 before:top-0 before:h-1 before:bg-primary/60 before:opacity-70 cursor-pointer"
+            onClick={() => navigate("/jardines")}
+          >
             <CardHeader>
               <div className="flex items-center gap-3">
                 <div className="rounded-lg bg-primary/10 p-3">
                   <Trees className="h-6 w-6 text-primary" />
                 </div>
                 <div>
-                  <CardTitle className="text-foreground">
+                  <CardTitle >
                     Jardines, Lotes y Cenizarios
                   </CardTitle>
                   <CardDescription>
@@ -75,7 +78,7 @@ const VendedorHome = () => {
               </p>
               <Button
                 className="w-full mt-4"
-                disabled
+                onClick={() => navigate("/jardines")}
               >
                 Acceder
               </Button>

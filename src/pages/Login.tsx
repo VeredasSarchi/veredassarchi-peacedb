@@ -79,13 +79,14 @@ export default function Login() {
             </div>
             <div>
               <label className="block mb-1 text-sm font-bold text-black">
-                Contrasena
+                Contraseña
               </label>
               <Input
                 type="password"
                 required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
+                placeholder="********"
               />
             </div>
             <Button type="submit" className="w-full" disabled={loading}>

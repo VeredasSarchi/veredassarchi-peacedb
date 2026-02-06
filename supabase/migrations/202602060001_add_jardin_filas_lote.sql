@@ -1,0 +1,2 @@
+ALTER TABLE "jardin"
+  ADD COLUMN "filas_lote" SMALLINT NOT NULL DEFAULT 8;

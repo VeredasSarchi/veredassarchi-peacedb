@@ -15,7 +15,7 @@ export default function Navigation() {
   return (
     <nav className="w-full flex items-center justify-between px-4 sm:px-6 py-3 border-b border-border bg-background text-foreground">
       <div className="flex gap-4 items-center">
-        <span className="font-bold">Veredas Sarchi</span>
+        <span className="font-bold">Veredas Sarchi - Poás</span>
 
         {user && (
           <>
