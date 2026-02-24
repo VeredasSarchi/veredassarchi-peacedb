@@ -36,9 +36,25 @@ export function PreAutorizadoForm({ preClienteId, onComplete, onSkip }: PreAutor
     },
   });
 
-  const onSubmit = (values: PreAutorizadoFormValues) => {
-    // TODO: Save to Supabase later
-    console.log("Pre-autorizado form data:", { preClienteId, ...values });
+  const onSubmit = async (values: PreAutorizadoFormValues) => {
+    const idContrato = Number(preClienteId);
+    if (!Number.isFinite(idContrato)) {
+      toast.error("No se pudo identificar el contrato");
+      return;
+    }
+
+    const { error } = await supabase.from("contrato_autorizados").insert({
+      id_contrato: idContrato,
+      nombre: values.nombre,
+      cedula: values.cedula || null,
+    });
+
+    if (error) {
+      console.error("Error guardando pre-autorizado:", error);
+      toast.error("No se pudo registrar el pre-autorizado");
+      return;
+    }
+
     toast.success("Pre-autorizado registrado correctamente");
     onComplete();
   };

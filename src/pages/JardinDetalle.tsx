@@ -67,7 +67,7 @@ type CenizarioDisplay = {
 const STATUS_LABELS: Record<LoteStatus, string> = {
   available: "Disponible",
   precontract: "Pre-contrato",
-  contract: "Ocupado (Contrato)",
+  contract: "Vendido",
   occupant: "Ocupante registrado",
   familiar: "Familiar",
 };
@@ -804,7 +804,7 @@ export default function JardinDetalle() {
                     </div>
                     <div className="flex items-center gap-2">
                       <span className="h-3 w-3 rounded-full bg-rose-500/80" />
-                      Ocupado (Contrato) ({counts.contract})
+                      Vendido ({counts.contract})
                     </div>
                     <div className="flex items-center gap-2">
                       <span className="h-3 w-3 rounded-full bg-slate-400/80" />
@@ -881,7 +881,7 @@ export default function JardinDetalle() {
             <CardHeader>
               <CardTitle>Cenizarios</CardTitle>
               <CardDescription>
-                Estados por contrato: disponible, pre-contrato o contrato.
+                Estados por venta: disponible, pre-contrato o vendido.
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -901,7 +901,7 @@ export default function JardinDetalle() {
                     </div>
                     <div className="flex items-center gap-2">
                       <span className="h-3 w-3 rounded-full bg-rose-500/80" />
-                      Contrato
+                      Vendido
                     </div>
                   </div>
 

@@ -38,9 +38,26 @@ export function BeneficiarioForm({ preClienteId, onComplete, onSkip }: Beneficia
     },
   });
 
-  const onSubmit = (values: BeneficiarioFormValues) => {
-    // TODO: Save to Supabase later
-    console.log("Beneficiario form data:", { preClienteId, ...values });
+  const onSubmit = async (values: BeneficiarioFormValues) => {
+    const idContrato = Number(preClienteId);
+    if (!Number.isFinite(idContrato)) {
+      toast.error("No se pudo identificar el contrato");
+      return;
+    }
+
+    const { error } = await supabase.from("contrato_beneficiarios").insert({
+      id_contrato: idContrato,
+      nombre: values.nombre,
+      cedula: values.cedula || null,
+      contacto: values.contacto || null,
+    });
+
+    if (error) {
+      console.error("Error guardando beneficiario:", error);
+      toast.error("No se pudo registrar el beneficiario");
+      return;
+    }
+
     toast.success("Beneficiario registrado correctamente");
     onComplete();
   };

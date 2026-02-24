@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { PreClienteForm } from "@/components/precontratos/PreClienteForm";
 import { PreAutorizadoForm } from "@/components/precontratos/PreAutorizadoForm";
 import { BeneficiarioForm } from "@/components/precontratos/BeneficiarioForm";
@@ -6,13 +7,17 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { CheckCircle2 } from "lucide-react";
 import { toast } from "sonner";
+import { useAuth } from "@/auth/AuthContext";
 
 type FormStep = "pre_cliente" | "pre_autorizado" | "beneficiario" | "complete";
 
 export default function Precontratos() {
+  const navigate = useNavigate();
+  const { role } = useAuth();
   const [currentStep, setCurrentStep] = useState<FormStep>("pre_cliente");
   const [preClienteId, setPreClienteId] = useState<string | null>(null);
   const [completedSteps, setCompletedSteps] = useState<Set<FormStep>>(new Set());
+  const menuPath = role === "vendedor" ? "/vendedor" : "/";
 
   const handlePreClienteComplete = (id: string) => {
     setPreClienteId(id);
@@ -58,11 +63,16 @@ export default function Precontratos() {
   return (
     <div className="min-h-screen bg-background p-4 md:p-8">
       <div className="mx-auto w-full px-2 sm:px-4 lg:px-8">
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-foreground mb-2">Precontratos</h1>
-          <p className="text-muted-foreground">
-            Sistema de registro de precontratos para Jardines de Paz VeredasSarchi
-          </p>
+        <div className="mb-8 flex items-start justify-between gap-4">
+          <div>
+            <h1 className="text-3xl font-bold text-foreground mb-2">Precontratos</h1>
+            <p className="text-muted-foreground">
+              Sistema de registro de precontratos para Jardines de Paz VeredasSarchi
+            </p>
+          </div>
+          <Button type="button" variant="outline" onClick={() => navigate(menuPath)}>
+            Volver al Menu
+          </Button>
         </div>
 
         {/* Progress Steps */}
@@ -87,7 +97,7 @@ export default function Precontratos() {
                 </div>
                 <span
                   className={`mt-2 text-xs font-medium ${
-                    currentStep === step.id ? "text-foreground" : "text-muted-foreground"
+                    currentStep === step.id ? "text-slate-900" : "text-muted-foreground"
                   }`}
                 >
                   {step.label}
@@ -103,7 +113,7 @@ export default function Precontratos() {
 
         <Card>
           <CardHeader>
-            <CardTitle>
+            <CardTitle className="text-slate-900">
               {currentStep === "pre_cliente" && "Informacion del Pre-Cliente"}
               {currentStep === "pre_autorizado" && "Informacion del Pre-Autorizado"}
               {currentStep === "beneficiario" && "Informacion del Beneficiario"}
