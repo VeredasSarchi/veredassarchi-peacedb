@@ -97,12 +97,18 @@ export default function Precontratos() {
                 </div>
                 <span
                   className={`mt-2 text-xs font-medium ${
-                    currentStep === step.id ? "text-slate-900" : "text-muted-foreground"
+                    currentStep === step.id ? "text-primary" : "text-muted-foreground"
                   }`}
                 >
                   {step.label}
                   {!step.required && (
-                    <span className="ml-1 text-muted-foreground">(Opcional)</span>
+                    <span
+                      className={`ml-1 ${
+                        currentStep === step.id ? "text-primary" : "text-muted-foreground"
+                      }`}
+                    >
+                      (Opcional)
+                    </span>
                   )}
                 </span>
               </div>

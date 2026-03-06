@@ -36,7 +36,7 @@ const AdminHome = () => {
           </p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div className="grid auto-rows-fr grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
           {[
             {
               title: "Pre-Contratos",
@@ -50,15 +50,17 @@ const AdminHome = () => {
               title: "Formalizar Pre-Contratos",
               description: "Completa la formalizacion y firma de pre-contratos.",
               icon: CheckCircle2,
+              action: () => navigate("/dashboard-precontratos"),
               actionLabel: "Acceder",
-              disabled: true,
+              disabled: false,
             },
             {
               title: "Contratos Activos",
               description: "Consulta y administra los contratos vigentes.",
               icon: FileCheck2,
+              action: () => navigate("/dashboard-contratos-activos"),
               actionLabel: "Acceder",
-              disabled: true,
+              disabled: false,
             },
             {
               title: "Contratos Anulados",
@@ -99,15 +101,17 @@ const AdminHome = () => {
               title: "Paquetes Funerarios",
               description: "Configura y administra los paquetes de servicios.",
               icon: Package,
+              action: () => navigate("/paquetes-funerarios"),
               actionLabel: "Acceder",
-              disabled: true,
+              disabled: false,
             },
             {
               title: "Cremaciones",
               description: "Agregar, ver y editar tipos de cremaciones.",
               icon: Flame,
+              action: () => navigate("/cremaciones"),
               actionLabel: "Acceder",
-              disabled: true,
+              disabled: false,
             },
             {
               title: "Jardines, Lotes y Cenizarios",
@@ -120,7 +124,7 @@ const AdminHome = () => {
           ].map((item) => (
             <Card
               key={item.title}
-              className={`relative overflow-hidden rounded-xl border border-primary/10 bg-gradient-to-br from-white/5 to-primary/5 shadow-md hover:shadow-xl hover:-translate-y-1 transition-all duration-200 before:absolute before:inset-x-0 before:top-0 before:h-1 before:bg-primary/60 before:opacity-70 ${item.action ? "cursor-pointer" : ""}`}
+              className={`relative flex h-full flex-col overflow-hidden rounded-xl border border-primary/10 bg-gradient-to-br from-white/5 to-primary/5 shadow-md transition-all duration-200 before:absolute before:inset-x-0 before:top-0 before:h-1 before:bg-primary/60 before:opacity-70 hover:-translate-y-1 hover:shadow-xl ${item.action ? "cursor-pointer" : ""}`}
               onClick={item.action}
             >
               <CardHeader>
@@ -133,13 +137,13 @@ const AdminHome = () => {
                   </div>
                 </div>
               </CardHeader>
-              <CardContent>
-                <p className="text-sm text-muted-foreground">
+              <CardContent className="flex flex-1 flex-col">
+                <p className="flex-1 text-sm text-muted-foreground">
                   {item.description}
                 </p>
                 {item.actionLabel && (
                   <Button
-                    className="w-full mt-3"
+                    className="mt-3 w-full"
                     onClick={(e) => {
                       e.stopPropagation();
                       item.action?.();

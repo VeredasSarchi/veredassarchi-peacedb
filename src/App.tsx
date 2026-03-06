@@ -9,6 +9,9 @@ import Precontratos from "@/pages/Precontratos";
 import AdminHome from "@/pages/AdminHome";
 import VendedorHome from "@/pages/VendedorHome";
 import DashboardPreContratos from "@/pages/DashboardPreContratos";
+import DashboardContratosActivos from "@/pages/DashboardContratosActivos";
+import PaquetesFunerarios from "@/pages/PaquetesFunerarios";
+import Cremaciones from "@/pages/Cremaciones";
 import Jardines from "@/pages/Jardines";
 import JardinDetalle from "@/pages/JardinDetalle";
 import NotFound from "@/pages/NotFound";
@@ -68,6 +71,33 @@ function AppLayout() {
             element={
               <ProtectedRoute allowedRoles={["admin", "vendedor"]}>
                 <DashboardPreContratos />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/dashboard-contratos-activos"
+            element={
+              <ProtectedRoute allowedRoles={["admin", "vendedor"]}>
+                <DashboardContratosActivos />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/paquetes-funerarios"
+            element={
+              <ProtectedRoute allowedRoles={["admin"]}>
+                <PaquetesFunerarios />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/cremaciones"
+            element={
+              <ProtectedRoute allowedRoles={["admin"]}>
+                <Cremaciones />
               </ProtectedRoute>
             }
           />
