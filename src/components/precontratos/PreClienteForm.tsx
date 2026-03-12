@@ -35,14 +35,14 @@ import type { Tables, TablesInsert } from "@/integrations/supabase/types";
 import { toast } from "sonner";
 
 const preClienteSchema = z.object({
-  numero_formulario: z.string().min(1, "El numero de formulario es requerido"),
+  numero_formulario: z.string().min(1, "El número de formulario es requerido"),
   numero_contrato: z.string().optional(),
   nombre_completo: z.string().min(1, "El nombre completo es requerido"),
   estado_civil: z.string().optional(),
   profesion: z.string().optional(),
   identificacion: z.string().optional(),
   direccion: z.string().optional(),
-  correo: z.string().email("Correo electronico invalido").optional().or(z.literal("")),
+  correo: z.string().email("Correo electrónico inválido").optional().or(z.literal("")),
   telefono1: z.string().optional(),
   telefono2: z.string().optional(),
   id_jardin: z.string().optional(),
@@ -59,6 +59,7 @@ const preClienteSchema = z.object({
   plazo_anios: z.string().optional(),
   total_meses: z.string().optional(),
   cuota_fija: z.string().optional(),
+  monto_mantenimiento_mensual: z.string().optional(),
   dia_pago: z.string().optional(),
   tasa_interes_anual: z.string().optional(),
   prima: z.string().optional(),
@@ -71,7 +72,7 @@ const preClienteSchema = z.object({
   vendedor: z.string().min(1, "Seleccione un vendedor"),
 });
 
-type PreClienteFormValues = z.infer<typeof preClienteSchema>;
+export type PreClienteFormValues = z.infer<typeof preClienteSchema>;
 type Jardin = Tables<"jardin">;
 type Lote = Tables<"lote">;
 type TipoLote = Tables<"tipo_lote">;
@@ -81,10 +82,58 @@ type PaqueteFunerario = Tables<"paquete_funerario">;
 type Vendedor = Tables<"vendedor">;
 type LoteStatus = "available" | "familiar" | "precontract" | "contract";
 type CenizarioStatus = "available" | "precontract" | "contract";
-type ProductType = "LOTE" | "CENIZARIO" | "CREMACION" | "PAQUETE_FUNERARIO";
+export type ProductType = "LOTE" | "CENIZARIO" | "CREMACION" | "PAQUETE_FUNERARIO";
 
 const REQUIRED_CREMATION_TYPES = ["ESPERANZA", "LA LUZ", "MASCOTAS", "RENACER"] as const;
 const DEFAULT_VENDOR_NAME = "sarchiveredas@gmail.com";
+
+export type PreClienteProductoDraft = Omit<TablesInsert<"contrato_producto">, "id_contrato">;
+export type PreClienteContratoDraft = Omit<TablesInsert<"contrato">, "id_contrato" | "id_cliente">;
+export type PreClienteDraftPayload = {
+  cliente: Omit<TablesInsert<"cliente">, "id_cliente">;
+  contrato: PreClienteContratoDraft;
+  productos: PreClienteProductoDraft[];
+};
+export type PreClienteSubmitPayload = {
+  values: PreClienteFormValues;
+  payload: PreClienteDraftPayload;
+};
+
+const EMPTY_PRE_CLIENTE_VALUES: PreClienteFormValues = {
+  numero_formulario: "",
+  numero_contrato: "",
+  nombre_completo: "",
+  estado_civil: "",
+  profesion: "",
+  identificacion: "",
+  direccion: "",
+  correo: "",
+  telefono1: "",
+  telefono2: "",
+  id_jardin: "",
+  cantidad_lotes: "",
+  lote_numeros: [],
+  tipo_lote: "",
+  cenizario_numeros: [],
+  id_paquete_funerario: "",
+  tipo_cremacion: "",
+  tipos_paquete_funerario: [],
+  precio: "",
+  plazo_anios: "",
+  total_meses: "",
+  cuota_fija: "",
+  monto_mantenimiento_mensual: "",
+  dia_pago: "",
+  tasa_interes_anual: "",
+  prima: "",
+  saldo: "",
+  monto_mantenimiento_anual: "",
+  anio_inicio_mantenimiento: "",
+  observaciones: "",
+  fecha: "",
+  metodo_pago: "",
+  vendedor: "",
+};
 
 const PACKAGE_PRODUCT_OPTIONS: Array<{ value: ProductType; label: string }> = [
   { value: "LOTE", label: "Lote" },
@@ -168,10 +217,44 @@ function formatCRC(value: number): string {
 }
 
 interface PreClienteFormProps {
-  onComplete: (id: string) => void;
+  initialValues?: PreClienteFormValues;
+  onComplete: (payload: PreClienteSubmitPayload) => void;
+  submitButtonLabel?: string;
+  showConfirmation?: boolean;
+  confirmOnSubmit?: boolean;
+  confirmationTitle?: string;
+  confirmationDescription?: string;
+  confirmationActionLabel?: string;
+  saveConfirmationTitle?: string;
+  saveConfirmationDescription?: string;
+  saveConfirmationActionLabel?: string;
+  hideNumeroFormulario?: boolean;
+  useWhiteGraphBackground?: boolean;
+  useDarkGraphText?: boolean;
+  skipNumeroFormularioUniquenessCheck?: boolean;
+  ignoredLoteIds?: string[];
+  ignoredCenizarioIds?: string[];
 }
 
-export function PreClienteForm({ onComplete }: PreClienteFormProps) {
+export function PreClienteForm({
+  onComplete,
+  initialValues,
+  submitButtonLabel = "Siguiente",
+  showConfirmation = true,
+  confirmOnSubmit = false,
+  confirmationTitle = "Confirmar paso a pre-autorizados",
+  confirmationDescription = "Esta información quedará guardada temporalmente para que la completes en el siguiente paso y se registre al finalizar el precontrato.",
+  confirmationActionLabel = "Continuar",
+  saveConfirmationTitle = "Confirmar cambios",
+  saveConfirmationDescription = "¿Deseas guardar los cambios realizados?",
+  saveConfirmationActionLabel = "Guardar cambios",
+  hideNumeroFormulario = false,
+  useWhiteGraphBackground = false,
+  useDarkGraphText = false,
+  skipNumeroFormularioUniquenessCheck = false,
+  ignoredLoteIds = [],
+  ignoredCenizarioIds = [],
+}: PreClienteFormProps) {
   const [jardines, setJardines] = useState<Jardin[]>([]);
   const [lotes, setLotes] = useState<Lote[]>([]);
   const [tiposLote, setTiposLote] = useState<TipoLote[]>([]);
@@ -187,44 +270,22 @@ export function PreClienteForm({ onComplete }: PreClienteFormProps) {
   >({});
   const [loadingCatalogs, setLoadingCatalogs] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [confirmSaveOpen, setConfirmSaveOpen] = useState(false);
 
   const form = useForm<PreClienteFormValues>({
     resolver: zodResolver(preClienteSchema),
     defaultValues: {
-      numero_formulario: "",
-      numero_contrato: "",
-      nombre_completo: "",
-      estado_civil: "",
-      profesion: "",
-      identificacion: "",
-      direccion: "",
-      correo: "",
-      telefono1: "",
-      telefono2: "",
-      id_jardin: "",
-      cantidad_lotes: "",
-      lote_numeros: [],
-      tipo_lote: "",
-      cenizario_numeros: [],
-      id_paquete_funerario: "",
-      tipo_cremacion: "",
-      tipos_paquete_funerario: [],
-      precio: "",
-      plazo_anios: "",
-      total_meses: "",
-      cuota_fija: "",
-      dia_pago: "",
-      tasa_interes_anual: "",
-      prima: "",
-      saldo: "",
-      monto_mantenimiento_anual: "",
-      anio_inicio_mantenimiento: "",
-      observaciones: "",
-      fecha: "",
-      metodo_pago: "",
-      vendedor: "",
+      ...EMPTY_PRE_CLIENTE_VALUES,
+      ...initialValues,
     },
   });
+
+  useEffect(() => {
+    form.reset({
+      ...EMPTY_PRE_CLIENTE_VALUES,
+      ...initialValues,
+    });
+  }, [initialValues, form]);
 
   const selectedJardin = form.watch("id_jardin");
   const selectedLoteIds = form.watch("lote_numeros");
@@ -234,6 +295,7 @@ export function PreClienteForm({ onComplete }: PreClienteFormProps) {
   const plazoAniosInput = form.watch("plazo_anios");
   const primaInput = form.watch("prima");
   const tasaAnualInput = form.watch("tasa_interes_anual");
+  const mantenimientoAnualInput = form.watch("monto_mantenimiento_anual");
 
   const hasLote = enabledProductTypes.includes("LOTE");
   const hasCenizario = enabledProductTypes.includes("CENIZARIO");
@@ -345,7 +407,16 @@ export function PreClienteForm({ onComplete }: PreClienteFormProps) {
     if (form.getValues("cuota_fija") !== cuotaStr) {
       form.setValue("cuota_fija", cuotaStr, { shouldDirty: false });
     }
-  }, [montoTotalInput, plazoAniosInput, primaInput, tasaAnualInput, form]);
+
+    const mantenimientoAnual = parseNumber(mantenimientoAnualInput);
+    const mantenimientoMensual =
+      mantenimientoAnual && mantenimientoAnual > 0 ? formatCRC(mantenimientoAnual / 12) : "";
+    if (form.getValues("monto_mantenimiento_mensual") !== mantenimientoMensual) {
+      form.setValue("monto_mantenimiento_mensual", mantenimientoMensual, {
+        shouldDirty: false,
+      });
+    }
+  }, [montoTotalInput, plazoAniosInput, primaInput, tasaAnualInput, mantenimientoAnualInput, form]);
 
   const lotesDelJardin = useMemo(
     () => lotes.filter((lote) => String(lote.id_jardin) === selectedJardin),
@@ -570,6 +641,8 @@ export function PreClienteForm({ onComplete }: PreClienteFormProps) {
         setContractStatusByCenizario({});
         return;
       }
+      const ignoredLoteSet = new Set(ignoredLoteIds);
+      const ignoredCenizarioSet = new Set(ignoredCenizarioIds);
 
       try {
         const lotIds = lotes.map((lote) => lote.id_lote);
@@ -603,6 +676,9 @@ export function PreClienteForm({ onComplete }: PreClienteFormProps) {
             return;
           }
           if (contrato.estado_contrato === "PRECONTRATO") {
+            if (ignoredLoteSet.has(String(idLote))) {
+              return;
+            }
             if (!lotMap[idLote]) {
               lotMap[idLote] = "precontract";
             }
@@ -619,6 +695,9 @@ export function PreClienteForm({ onComplete }: PreClienteFormProps) {
             return;
           }
           if (contrato.estado_contrato === "PRECONTRATO") {
+            if (ignoredCenizarioSet.has(String(idCenizario))) {
+              return;
+            }
             if (!cenizarioMap[idCenizario]) {
               cenizarioMap[idCenizario] = "precontract";
             }
@@ -635,7 +714,7 @@ export function PreClienteForm({ onComplete }: PreClienteFormProps) {
     }
 
     void loadProductStatus();
-  }, [lotes, tiposCenizario]);
+  }, [lotes, tiposCenizario, ignoredLoteIds, ignoredCenizarioIds]);
 
   const onSubmit = async (values: PreClienteFormValues) => {
     try {
@@ -729,63 +808,56 @@ export function PreClienteForm({ onComplete }: PreClienteFormProps) {
 
       const idVendedor = Number(values.vendedor);
       if (!Number.isFinite(idVendedor)) {
-        toast.error("El vendedor seleccionado no es valido");
+        toast.error("El vendedor seleccionado no es válido");
         return;
       }
 
       const numeroFormulario = values.numero_formulario.trim();
       if (!numeroFormulario) {
         form.setError("numero_formulario", {
-          message: "El numero de formulario es requerido",
+          message: "El número de formulario es requerido",
         });
-        toast.error("Debe indicar el numero de formulario");
+        toast.error("Debe indicar el número de formulario");
         return;
       }
 
-      const dupCheckByNumeroFormulario = await supabase
-        .from("contrato")
-        .select("id_contrato")
-        .eq("numero_formulario", numeroFormulario)
-        .limit(1);
+      if (!skipNumeroFormularioUniquenessCheck) {
+        const dupCheckByNumeroFormulario = await supabase
+          .from("contrato")
+          .select("id_contrato")
+          .eq("numero_formulario", numeroFormulario)
+          .limit(1);
 
-      if (dupCheckByNumeroFormulario.error) {
-        throw dupCheckByNumeroFormulario.error;
-      }
-      if ((dupCheckByNumeroFormulario.data ?? []).length > 0) {
-        form.setError("numero_formulario", {
-          message: "Este numero de formulario ya existe",
-        });
-        toast.error("Ya existe un precontrato con ese numero de formulario");
-        return;
+        if (dupCheckByNumeroFormulario.error) {
+          throw dupCheckByNumeroFormulario.error;
+        }
+        if ((dupCheckByNumeroFormulario.data ?? []).length > 0) {
+          form.setError("numero_formulario", {
+            message: "Este número de formulario ya existe",
+          });
+          toast.error("Ya existe un precontrato con ese número de formulario");
+          return;
+        }
       }
 
-      const { data: clienteInsertado, error: clienteError } = await supabase
-        .from("cliente")
-        .insert({
-          nombre_completo: values.nombre_completo,
-          cedula: values.identificacion || null,
-          email: values.correo || null,
-          direccion: values.direccion || null,
-          estado_civil: values.estado_civil || null,
-          profesion: values.profesion || null,
-          telefono1: values.telefono1 || null,
-          telefono2: values.telefono2 || null,
-          observaciones: values.observaciones || null,
-        })
-        .select("id_cliente")
-        .single();
-
-      if (clienteError || !clienteInsertado) {
-        throw clienteError ?? new Error("No se pudo crear el cliente");
-      }
+      const clientePayload: Omit<TablesInsert<"cliente">, "id_cliente"> = {
+        nombre_completo: values.nombre_completo,
+        cedula: values.identificacion || null,
+        email: values.correo || null,
+        direccion: values.direccion || null,
+        estado_civil: values.estado_civil || null,
+        profesion: values.profesion || null,
+        telefono1: values.telefono1 || null,
+        telefono2: values.telefono2 || null,
+        observaciones: values.observaciones || null,
+      };
 
       const numeroContrato = values.numero_contrato?.trim() || `PRE-${String(Date.now()).slice(-8)}`;
 
-      const contratoPayload: TablesInsert<"contrato"> = {
+      const contratoPayload: PreClienteContratoDraft = {
         numero_contrato: numeroContrato,
         numero_formulario: numeroFormulario,
         fecha_firma: values.fecha || null,
-        id_cliente: clienteInsertado.id_cliente,
         id_vendedor: idVendedor,
         monto_arrendamiento_total: parseNumber(values.precio),
         plazo_anios: parseNumber(values.plazo_anios),
@@ -802,59 +874,24 @@ export function PreClienteForm({ onComplete }: PreClienteFormProps) {
         estado_contrato: "PRECONTRATO",
       };
 
-      const { data: contratoInsertado, error: contratoError } = await supabase
-        .from("contrato")
-        .insert(contratoPayload)
-        .select("id_contrato")
-        .single();
-
-      if (contratoError) {
-        if ((contratoError as { code?: string }).code === "23505") {
-          form.setError("numero_formulario", {
-            message: "Este numero de formulario ya existe",
-          });
-          toast.error("Ya existe un precontrato con ese numero de formulario");
-          await supabase
-            .from("cliente")
-            .delete()
-            .eq("id_cliente", clienteInsertado.id_cliente);
-          return;
-        }
-        throw contratoError;
-      }
-      if (!contratoInsertado) {
-        throw new Error("No se pudo crear el contrato");
-      }
-
       const buildPayloadByType = (tipoProducto: ProductType) => {
-        const payload: {
-          id_contrato: number;
-          tipo_producto: ProductType;
-          id_lote?: number | null;
-          id_tipo_cenizario?: number | null;
-          id_tipo_cremacion?: number | null;
-          id_paquete?: number | null;
-          precio?: number | null;
-          cantidad?: number | null;
-        } = {
-          id_contrato: contratoInsertado.id_contrato,
+        const payload: PreClienteProductoDraft = {
           tipo_producto: tipoProducto,
+          id_lote: null,
+          id_tipo_cenizario: null,
+          id_tipo_cremacion: null,
+          id_paquete: null,
           precio: parseNumber(values.precio),
           cantidad: parseNumber(values.cantidad_lotes),
         };
 
-        if (tipoProducto === "LOTE") {
-          return payload;
-        }
         if (tipoProducto === "PAQUETE_FUNERARIO") {
           payload.id_paquete = parseNumber(values.id_paquete_funerario);
           payload.cantidad = 1;
-          return payload;
         }
         if (tipoProducto === "CREMACION") {
           payload.id_tipo_cremacion = parseNumber(values.tipo_cremacion);
         }
-
         return payload;
       };
 
@@ -879,44 +916,15 @@ export function PreClienteForm({ onComplete }: PreClienteFormProps) {
         return [buildPayloadByType(tipo)];
       });
 
-      const { error: productoError } = await supabase.from("contrato_producto").insert(
-        payloadProductos
-      );
-
-      if (productoError) {
-        throw productoError;
-      }
-
-      const lotesProducto = payloadProductos.filter((item) => item.tipo_producto === "LOTE");
-      if (lotesProducto.length > 0) {
-        setContractStatusByLot((prev) => {
-          const next = { ...prev };
-          lotesProducto.forEach((item) => {
-            if (item.id_lote) {
-              next[item.id_lote] = "precontract";
-            }
-          });
-          return next;
-        });
-      }
-
-      const cenizariosProducto = payloadProductos.filter(
-        (item) => item.tipo_producto === "CENIZARIO"
-      );
-      if (cenizariosProducto.length > 0) {
-        setContractStatusByCenizario((prev) => {
-          const next = { ...prev };
-          cenizariosProducto.forEach((item) => {
-            if (item.id_tipo_cenizario) {
-              next[item.id_tipo_cenizario] = "precontract";
-            }
-          });
-          return next;
-        });
-      }
-
-      toast.success("Pre-cliente registrado correctamente");
-      onComplete(String(contratoInsertado.id_contrato));
+      onComplete({
+        values,
+        payload: {
+          cliente: clientePayload,
+          contrato: contratoPayload,
+          productos: payloadProductos,
+        },
+      });
+      toast.success("Pre-cliente preparado para continuar");
     } catch (error) {
       console.error("Error registrando pre-cliente:", error);
       toast.error("No se pudo registrar el pre-contrato");
@@ -928,7 +936,15 @@ export function PreClienteForm({ onComplete }: PreClienteFormProps) {
     if (!isValid) {
       return;
     }
-    setConfirmOpen(true);
+    if (showConfirmation) {
+      setConfirmOpen(true);
+      return;
+    }
+    if (confirmOnSubmit) {
+      setConfirmSaveOpen(true);
+      return;
+    }
+    void form.handleSubmit(onSubmit)();
   };
 
   return (
@@ -938,22 +954,24 @@ export function PreClienteForm({ onComplete }: PreClienteFormProps) {
           event.preventDefault();
           void handleRequestSubmit();
         }}
-        className="space-y-6"
+        className={`space-y-6 ${hideNumeroFormulario ? "text-foreground" : "text-card-foreground"}`}
       >
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <FormField
-            control={form.control}
-            name="numero_formulario"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>Numero de Formulario *</FormLabel>
-                <FormControl>
-                  <Input placeholder="Ej: F-001" {...field} />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
+          {!hideNumeroFormulario && (
+            <FormField
+              control={form.control}
+              name="numero_formulario"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Número de Formulario *</FormLabel>
+                  <FormControl>
+                    <Input placeholder="Ej: F-001" {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+          )}
 
           <FormField
             control={form.control}
@@ -974,9 +992,9 @@ export function PreClienteForm({ onComplete }: PreClienteFormProps) {
             name="identificacion"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Identificacion</FormLabel>
+                <FormLabel>Identificación</FormLabel>
                 <FormControl>
-                  <Input placeholder="Numero de identificacion" {...field} />
+                  <Input placeholder="Número de identificación" {...field} />
                 </FormControl>
                 <FormMessage />
               </FormItem>
@@ -1013,9 +1031,9 @@ export function PreClienteForm({ onComplete }: PreClienteFormProps) {
             name="profesion"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Profesion</FormLabel>
+                <FormLabel>Profesión</FormLabel>
                 <FormControl>
-                  <Input placeholder="Profesion u ocupacion" {...field} />
+                  <Input placeholder="Profesión u ocupación" {...field} />
                 </FormControl>
                 <FormMessage />
               </FormItem>
@@ -1028,7 +1046,7 @@ export function PreClienteForm({ onComplete }: PreClienteFormProps) {
             name="correo"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Correo Electronico</FormLabel>
+                <FormLabel>Correo Electrónico</FormLabel>
                 <FormControl>
                   <Input type="email" placeholder="correo@ejemplo.com" {...field} />
                 </FormControl>
@@ -1042,9 +1060,9 @@ export function PreClienteForm({ onComplete }: PreClienteFormProps) {
             name="telefono1"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Telefono 1</FormLabel>
+                <FormLabel>Teléfono 1</FormLabel>
                 <FormControl>
-                  <Input placeholder="Numero de telefono" {...field} />
+                  <Input placeholder="Número de teléfono" {...field} />
                 </FormControl>
                 <FormMessage />
               </FormItem>
@@ -1056,9 +1074,9 @@ export function PreClienteForm({ onComplete }: PreClienteFormProps) {
             name="telefono2"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Telefono 2</FormLabel>
+                <FormLabel>Teléfono 2</FormLabel>
                 <FormControl>
-                  <Input placeholder="Numero de telefono alternativo" {...field} />
+                  <Input placeholder="Número de teléfono alternativo" {...field} />
                 </FormControl>
                 <FormMessage />
               </FormItem>
@@ -1072,9 +1090,9 @@ export function PreClienteForm({ onComplete }: PreClienteFormProps) {
           name="direccion"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>Direccion</FormLabel>
+              <FormLabel>Dirección</FormLabel>
               <FormControl>
-                <Textarea placeholder="Direccion completa" {...field} />
+                <Textarea placeholder="Dirección completa" {...field} />
               </FormControl>
               <FormMessage />
             </FormItem>
@@ -1082,8 +1100,10 @@ export function PreClienteForm({ onComplete }: PreClienteFormProps) {
         />
 
         <div className="border-t border-border pt-6">
-          <h3 className="text-lg font-semibold text-slate-900 mb-4">
-            Informacion de Producto y Lotes
+          <h3
+            className={`text-lg font-semibold mb-4 ${hideNumeroFormulario ? "text-foreground" : "text-slate-900"}`}
+          >
+            Información de Producto y Lotes
           </h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {requiresGardenSelection ? (
@@ -1267,9 +1287,9 @@ export function PreClienteForm({ onComplete }: PreClienteFormProps) {
                     />
                   </FormControl>
                   {hasFamilyLotsSelected && (
-                    <p className="text-xs text-muted-foreground">
-                      Plan familiar detectado: mínimo 2 lotes y selección en pares.
-                    </p>
+                  <p className="text-xs text-muted-foreground">
+                    Plan familiar detectado: mínimo 2 lotes y selección en pares.
+                  </p>
                   )}
                   <FormMessage />
                 </FormItem>
@@ -1368,12 +1388,16 @@ export function PreClienteForm({ onComplete }: PreClienteFormProps) {
           </div>
 
           {selectedJardin && (hasLote || hasCenizario) && (
-            <div className="mt-6 space-y-4 rounded-md border border-border bg-muted/20 p-4">
+            <div
+              className={`mt-6 space-y-4 rounded-md border border-border p-4 ${
+                useWhiteGraphBackground ? "bg-white" : "bg-muted/20"
+              }`}
+            >
               <h4 className="text-sm font-semibold text-slate-900">
-                Seleccion grafica del jardin
+                Selección gráfica del jardín
               </h4>
 
-              <div className="flex flex-wrap gap-4 text-xs">
+              <div className="flex flex-wrap gap-4 text-xs text-slate-900">
                 <div className="flex items-center gap-2">
                   <span className="h-3 w-3 rounded-full bg-emerald-500/80" />
                   Disponible
@@ -1393,9 +1417,13 @@ export function PreClienteForm({ onComplete }: PreClienteFormProps) {
               </div>
 
               <div className="space-y-2">
-                <p className="text-xs font-semibold text-slate-800">Lotes por fila</p>
+                <p className="text-xs font-semibold text-slate-800">
+                  Lotes por fila
+                </p>
                 {filasLotes.length === 0 ? (
-                  <p className="text-xs text-muted-foreground">No hay lotes registrados.</p>
+                  <p className="text-xs text-muted-foreground">
+                    No hay lotes registrados.
+                  </p>
                 ) : (
                   filasLotes.map((fila) => (
                     <div key={`fila-${fila}`} className="flex items-start gap-3">
@@ -1419,7 +1447,7 @@ export function PreClienteForm({ onComplete }: PreClienteFormProps) {
                               ? "bg-rose-500/80 text-white"
                               : status === "precontract"
                               ? "bg-amber-500/80 text-white"
-                              : status === "familiar"
+                          : status === "familiar"
                               ? "bg-violet-300/80 text-slate-900"
                               : "bg-emerald-500/80 text-white";
 
@@ -1490,7 +1518,7 @@ export function PreClienteForm({ onComplete }: PreClienteFormProps) {
                             >
                               {lote.numero_lote}
                               {clickedIsFamily && status !== "familiar" && (
-                                <span className="absolute top-1 right-1 rounded-full bg-violet-300/90 px-1 text-[9px] font-bold text-slate-900">
+                              <span className="absolute top-1 right-1 rounded-full bg-violet-300/90 px-1 text-[9px] font-bold text-slate-900">
                                   F
                                 </span>
                               )}
@@ -1504,7 +1532,9 @@ export function PreClienteForm({ onComplete }: PreClienteFormProps) {
               </div>
 
               <div className="space-y-2">
-                <p className="text-xs font-semibold text-slate-800">Cenizarios</p>
+                <p className="text-xs font-semibold text-slate-800">
+                  Cenizarios
+                </p>
                 {cenizariosDelJardin.length === 0 ? (
                   <p className="text-xs text-muted-foreground">
                     No hay cenizarios registrados.
@@ -1543,10 +1573,14 @@ export function PreClienteForm({ onComplete }: PreClienteFormProps) {
                             isSelected ? "ring-2 ring-offset-1 ring-slate-900" : ""
                           }`}
                         >
-                          <div className="text-xs font-semibold">
+                          <div className="text-xs font-semibold text-slate-900">
                             {cenizario.numero_cenizario}
                           </div>
-                          <div className="text-[11px] opacity-90">{cenizario.descripcion}</div>
+                          <div
+                            className="text-[11px] opacity-90"
+                          >
+                            {cenizario.descripcion}
+                          </div>
                         </button>
                       );
                     })}
@@ -1558,7 +1592,9 @@ export function PreClienteForm({ onComplete }: PreClienteFormProps) {
         </div>
 
         <div className="border-t border-border pt-6">
-          <h3 className="text-lg font-semibold text-slate-900 mb-4">
+          <h3
+            className={`text-lg font-semibold mb-4 ${hideNumeroFormulario ? "text-foreground" : "text-slate-900"}`}
+          >
             Condiciones Financieras
           </h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1578,7 +1614,7 @@ export function PreClienteForm({ onComplete }: PreClienteFormProps) {
                     <Input
                       type="text"
                       inputMode="decimal"
-                      placeholder="₡ 0,00"
+                      placeholder="¢ 0,00"
                       {...field}
                       onFocus={() => handleCurrencyFocus("precio")}
                       onBlur={() => {
@@ -1619,7 +1655,7 @@ export function PreClienteForm({ onComplete }: PreClienteFormProps) {
                     <Input
                       type="text"
                       inputMode="decimal"
-                      placeholder="₡ 0,00"
+                      placeholder="¢ 0,00"
                       {...field}
                       onFocus={() => handleCurrencyFocus("prima")}
                       onBlur={() => {
@@ -1641,7 +1677,7 @@ export function PreClienteForm({ onComplete }: PreClienteFormProps) {
               name="dia_pago"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Dia de Pago Mensual</FormLabel>
+                  <FormLabel>Día de Pago Mensual</FormLabel>
                   <FormControl>
                     <Input type="number" min="1" max="31" placeholder="1-31" {...field} />
                   </FormControl>
@@ -1655,7 +1691,7 @@ export function PreClienteForm({ onComplete }: PreClienteFormProps) {
               name="tasa_interes_anual"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Tasa de Interes Anual (%)</FormLabel>
+                  <FormLabel>Tasa de Interés Anual (%)</FormLabel>
                   <FormControl>
                     <Input type="number" step="0.01" placeholder="Ej: 8.50" {...field} />
                   </FormControl>
@@ -1669,12 +1705,12 @@ export function PreClienteForm({ onComplete }: PreClienteFormProps) {
               name="monto_mantenimiento_anual"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Monto Mantenimiento Anual (CRC)</FormLabel>
+                  <FormLabel>Monto Mantenimiento Anual + IVA (CRC)</FormLabel>
                   <FormControl>
                     <Input
                       type="text"
                       inputMode="decimal"
-                      placeholder="₡ 0,00"
+                      placeholder="¢ 0,00"
                       {...field}
                       onFocus={() => handleCurrencyFocus("monto_mantenimiento_anual")}
                       onBlur={() => {
@@ -1724,11 +1760,11 @@ export function PreClienteForm({ onComplete }: PreClienteFormProps) {
               name="metodo_pago"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Metodo de Pago</FormLabel>
+                  <FormLabel>Método de Pago</FormLabel>
                   <Select onValueChange={field.onChange} defaultValue={field.value}>
                     <FormControl>
                       <SelectTrigger>
-                        <SelectValue placeholder="Seleccione metodo" />
+                        <SelectValue placeholder="Seleccione método" />
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
@@ -1778,8 +1814,10 @@ export function PreClienteForm({ onComplete }: PreClienteFormProps) {
             />
 
             <div className="md:col-span-2 pt-1">
-              <p className="text-sm font-medium text-slate-700">
-                Campos calculados automaticamente
+              <p
+                className={`text-sm font-medium ${hideNumeroFormulario ? "text-muted-foreground" : "text-slate-700"}`}
+              >
+                Campos calculados automáticamente
               </p>
             </div>
 
@@ -1812,7 +1850,7 @@ export function PreClienteForm({ onComplete }: PreClienteFormProps) {
                   <FormControl>
                     <Input
                       type="text"
-                      placeholder="Se calcula automaticamente"
+                      placeholder="Se calcula automáticamente"
                       readOnly
                       className="bg-slate-100/70"
                       {...field}
@@ -1832,7 +1870,7 @@ export function PreClienteForm({ onComplete }: PreClienteFormProps) {
                   <FormControl>
                     <Input
                       type="text"
-                      placeholder="Se calcula automaticamente"
+                      placeholder="Se calcula automáticamente"
                       readOnly
                       className="bg-slate-100/70"
                       {...field}
@@ -1867,18 +1905,15 @@ export function PreClienteForm({ onComplete }: PreClienteFormProps) {
 
         <div className="flex justify-end">
           <Button type="submit" size="lg" disabled={form.formState.isSubmitting}>
-            Siguiente
+            {submitButtonLabel}
           </Button>
         </div>
       </form>
       <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Confirmar guardado del precontrato</AlertDialogTitle>
-            <AlertDialogDescription>
-              Estas seguro de guardar este precontrato? Si continúas al siguiente paso, la
-              información quedará registrada.
-            </AlertDialogDescription>
+            <AlertDialogTitle>{confirmationTitle}</AlertDialogTitle>
+            <AlertDialogDescription>{confirmationDescription}</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Seguir editando</AlertDialogCancel>
@@ -1889,7 +1924,27 @@ export function PreClienteForm({ onComplete }: PreClienteFormProps) {
               }}
               disabled={form.formState.isSubmitting}
             >
-              Guardar y continuar
+              {confirmationActionLabel}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      <AlertDialog open={confirmSaveOpen} onOpenChange={setConfirmSaveOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{saveConfirmationTitle}</AlertDialogTitle>
+            <AlertDialogDescription>{saveConfirmationDescription}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Seguir editando</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                setConfirmSaveOpen(false);
+                void form.handleSubmit(onSubmit)();
+              }}
+              disabled={form.formState.isSubmitting}
+            >
+              {saveConfirmationActionLabel}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -1897,5 +1952,14 @@ export function PreClienteForm({ onComplete }: PreClienteFormProps) {
     </Form>
   );
 }
+
+
+
+
+
+
+
+
+
 
 

@@ -1,13 +1,17 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { PreClienteForm } from "@/components/precontratos/PreClienteForm";
-import { PreAutorizadoForm } from "@/components/precontratos/PreAutorizadoForm";
-import { BeneficiarioForm } from "@/components/precontratos/BeneficiarioForm";
+import {
+  type PreClienteSubmitPayload,
+  PreClienteForm,
+} from "@/components/precontratos/PreClienteForm";
+import { type PreAutorizadoDraft, PreAutorizadoForm } from "@/components/precontratos/PreAutorizadoForm";
+import { type BeneficiarioDraft, BeneficiarioForm } from "@/components/precontratos/BeneficiarioForm";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { CheckCircle2 } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/auth/AuthContext";
+import { supabase } from "@/integrations/supabase/client";
 
 type FormStep = "pre_cliente" | "pre_autorizado" | "beneficiario" | "complete";
 
@@ -15,49 +19,168 @@ export default function Precontratos() {
   const navigate = useNavigate();
   const { role } = useAuth();
   const [currentStep, setCurrentStep] = useState<FormStep>("pre_cliente");
-  const [preClienteId, setPreClienteId] = useState<string | null>(null);
+  const [preClienteDraft, setPreClienteDraft] = useState<PreClienteSubmitPayload | null>(null);
+  const [preAutorizadosDraft, setPreAutorizadosDraft] = useState<PreAutorizadoDraft[]>([]);
+  const [beneficiarioDraft, setBeneficiarioDraft] = useState<BeneficiarioDraft>({
+    nombre: "",
+    cedula: "",
+    contacto: "",
+  });
+  const [savingFinal, setSavingFinal] = useState(false);
   const [completedSteps, setCompletedSteps] = useState<Set<FormStep>>(new Set());
   const menuPath = role === "vendedor" ? "/vendedor" : "/";
 
-  const handlePreClienteComplete = (id: string) => {
-    setPreClienteId(id);
+  const handlePreClienteComplete = (payload: PreClienteSubmitPayload) => {
+    setPreClienteDraft(payload);
     setCompletedSteps((prev) => new Set(prev).add("pre_cliente"));
     setCurrentStep("pre_autorizado");
-    toast.success("Pre-cliente registrado exitosamente");
+    toast.success("Pre-cliente preparado exitosamente");
+  };
+
+  const handlePreAutorizadoSave = (autorizados: PreAutorizadoDraft[]) => {
+    setPreAutorizadosDraft(autorizados);
   };
 
   const handlePreAutorizadoComplete = () => {
     setCompletedSteps((prev) => new Set(prev).add("pre_autorizado"));
     setCurrentStep("beneficiario");
-    toast.success("Pre-autorizado registrado exitosamente");
+    toast.success("Pre-autorizado registrado correctamente");
   };
 
-  const handleBeneficiarioComplete = () => {
-    setCompletedSteps((prev) => new Set(prev).add("beneficiario"));
-    setCurrentStep("complete");
-    toast.success("Beneficiario registrado exitosamente");
+  const handlePreAutorizadoBack = (autorizados: PreAutorizadoDraft[]) => {
+    setPreAutorizadosDraft(autorizados);
+    setCurrentStep("pre_cliente");
+  };
+
+  const handleBeneficiarioSave = (beneficiario: BeneficiarioDraft) => {
+    setBeneficiarioDraft(beneficiario);
   };
 
   const handleSkipAutorizado = () => {
+    setPreAutorizadosDraft([]);
     setCurrentStep("beneficiario");
     toast.info("Pre-autorizado omitido");
   };
 
-  const handleSkipBeneficiario = () => {
-    setCurrentStep("complete");
-    toast.info("Beneficiario omitido");
+  const handleBeneficiarioBack = (beneficiario: BeneficiarioDraft) => {
+    setBeneficiarioDraft(beneficiario);
+    setCurrentStep("pre_autorizado");
+  };
+
+  const handleBeneficiarioComplete = async () => {
+    if (!preClienteDraft) {
+      toast.error("No se encontró la información del pre-cliente");
+      return;
+    }
+
+    if (!beneficiarioDraft.nombre.trim()) {
+      toast.error("El beneficiario es obligatorio");
+      setCurrentStep("beneficiario");
+      return;
+    }
+
+    setSavingFinal(true);
+    try {
+      const { data: clienteInsertado, error: clienteError } = await supabase
+        .from("cliente")
+        .insert(preClienteDraft.payload.cliente)
+        .select("id_cliente")
+        .single();
+
+      if (clienteError || !clienteInsertado) {
+        throw clienteError ?? new Error("No se pudo crear el cliente");
+      }
+
+      const contratoPayload = {
+        ...preClienteDraft.payload.contrato,
+        id_cliente: clienteInsertado.id_cliente,
+      };
+
+      const { data: contratoInsertado, error: contratoError } = await supabase
+        .from("contrato")
+        .insert(contratoPayload)
+        .select("id_contrato, numero_formulario")
+        .single();
+
+      if (contratoError) {
+        if ((contratoError as { code?: string }).code === "23505") {
+          await supabase.from("cliente").delete().eq("id_cliente", clienteInsertado.id_cliente);
+          toast.error("Ya existe un precontrato con ese número de formulario");
+          return;
+        }
+        throw contratoError;
+      }
+      if (!contratoInsertado) {
+        throw new Error("No se pudo crear el contrato");
+      }
+
+      const idContrato = contratoInsertado.id_contrato;
+      const productosPayload = preClienteDraft.payload.productos.map((producto) => ({
+        ...producto,
+        id_contrato: idContrato,
+      }));
+
+      if (productosPayload.length > 0) {
+        const { error: productoError } = await supabase.from("contrato_producto").insert(productosPayload);
+        if (productoError) {
+          throw productoError;
+        }
+      }
+
+      const autorizados = preAutorizadosDraft.filter((item) => item.nombre.trim().length > 0);
+
+      if (autorizados.length > 0) {
+        const { error } = await supabase.from("contrato_autorizados").insert(
+          autorizados.map((item) => ({
+            id_contrato: idContrato,
+            nombre: item.nombre,
+            cedula: item.cedula || null,
+          }))
+        );
+        if (error) {
+          throw error;
+        }
+      }
+
+      const { error: beneficiarioError } = await supabase
+        .from("contrato_beneficiarios")
+        .insert({
+          id_contrato: idContrato,
+          nombre: beneficiarioDraft.nombre,
+          cedula: beneficiarioDraft.cedula || null,
+          contacto: beneficiarioDraft.contacto || null,
+        });
+      if (beneficiarioError) {
+        throw beneficiarioError;
+      }
+
+      setCompletedSteps((prev) => new Set(prev).add("beneficiario"));
+      setCurrentStep("complete");
+      toast.success("Precontrato registrado correctamente");
+    } catch (error) {
+      console.error("Error guardando precontrato final:", error);
+      toast.error("No se pudo completar el precontrato");
+    } finally {
+      setSavingFinal(false);
+    }
   };
 
   const handleNewPrecontrato = () => {
     setCurrentStep("pre_cliente");
-    setPreClienteId(null);
+    setPreClienteDraft(null);
+    setPreAutorizadosDraft([]);
+    setBeneficiarioDraft({
+      nombre: "",
+      cedula: "",
+      contacto: "",
+    });
     setCompletedSteps(new Set());
   };
 
   const steps = [
     { id: "pre_cliente", label: "Pre-cliente", required: true },
     { id: "pre_autorizado", label: "Pre-autorizado", required: false },
-    { id: "beneficiario", label: "Beneficiario", required: false },
+    { id: "beneficiario", label: "Beneficiario", required: true },
   ];
 
   return (
@@ -75,7 +198,6 @@ export default function Precontratos() {
           </Button>
         </div>
 
-        {/* Progress Steps */}
         <div className="mb-8 flex items-center justify-center gap-2">
           {steps.map((step, index) => (
             <div key={step.id} className="flex items-center">
@@ -128,28 +250,35 @@ export default function Precontratos() {
             <CardDescription>
               {currentStep === "pre_cliente" && "Complete la informacion basica del pre-cliente"}
               {currentStep === "pre_autorizado" && "Agregue una persona autorizada (opcional)"}
-              {currentStep === "beneficiario" && "Agregue un beneficiario (opcional)"}
+              {currentStep === "beneficiario" && "Agregue la información del beneficiario (obligatorio)"}
               {currentStep === "complete" && "El precontrato ha sido registrado exitosamente"}
             </CardDescription>
           </CardHeader>
           <CardContent>
             {currentStep === "pre_cliente" && (
-              <PreClienteForm onComplete={handlePreClienteComplete} />
-            )}
-
-            {currentStep === "pre_autorizado" && preClienteId && (
-              <PreAutorizadoForm
-                preClienteId={preClienteId}
-                onComplete={handlePreAutorizadoComplete}
-                onSkip={handleSkipAutorizado}
+              <PreClienteForm
+                initialValues={preClienteDraft?.values}
+                onComplete={handlePreClienteComplete}
               />
             )}
 
-            {currentStep === "beneficiario" && preClienteId && (
+            {currentStep === "pre_autorizado" && (
+              <PreAutorizadoForm
+                preAutorizados={preAutorizadosDraft}
+                onSave={handlePreAutorizadoSave}
+                onComplete={handlePreAutorizadoComplete}
+                onSkip={handleSkipAutorizado}
+                onBack={handlePreAutorizadoBack}
+              />
+            )}
+
+            {currentStep === "beneficiario" && (
               <BeneficiarioForm
-                preClienteId={preClienteId}
+                initialValues={beneficiarioDraft}
+                onSave={handleBeneficiarioSave}
                 onComplete={handleBeneficiarioComplete}
-                onSkip={handleSkipBeneficiario}
+                onBack={handleBeneficiarioBack}
+                disabled={savingFinal}
               />
             )}
 

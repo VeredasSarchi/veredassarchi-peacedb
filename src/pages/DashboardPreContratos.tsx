@@ -5,10 +5,10 @@ import {
   CheckCircle2,
   FileCheck2,
   FolderClosed,
+  Trash2,
   Pencil,
   RefreshCw,
   Search,
-  Trash2,
 } from "lucide-react";
 import { useAuth } from "@/auth/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
@@ -35,14 +35,12 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
-import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { PreClienteForm, type PreClienteFormValues, type PreClienteSubmitPayload } from "@/components/precontratos/PreClienteForm";
+import type { ProductType } from "@/components/precontratos/PreClienteForm";
 
 type ContratoRow = Tables<"contrato"> & { numero_formulario: string | null };
 type ClienteRow = Tables<"cliente">;
@@ -75,17 +73,6 @@ type PreContratoDetalle = {
   beneficiarios: BeneficiarioRow[];
 };
 
-type EditFormData = {
-  nombre_completo: string;
-  cedula: string;
-  estado_civil: string;
-  profesion: string;
-  email: string;
-  telefono1: string;
-  telefono2: string;
-  direccion: string;
-};
-
 function asSingle<T>(value: T | T[] | null | undefined): T | null {
   if (Array.isArray(value)) {
     return value[0] ?? null;
@@ -111,6 +98,15 @@ function normalizeSearchValue(value: string | null | undefined): string {
     .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase()
     .trim();
+}
+
+function toInputNumber(value: number | null | undefined): string {
+  return value === null || value === undefined ? "" : String(value);
+}
+
+function toDateInput(value: string | null | undefined): string {
+  if (!value) return "";
+  return value.split("T")[0];
 }
 
 function isMissingNumeroFormularioColumn(error: unknown): boolean {
@@ -163,17 +159,84 @@ export default function DashboardPreContratos() {
 
   const [editOpen, setEditOpen] = useState(false);
   const [editingRecord, setEditingRecord] = useState<PreContratoDetalle | null>(null);
-  const [savingEdit, setSavingEdit] = useState(false);
-  const [editForm, setEditForm] = useState<EditFormData>({
-    nombre_completo: "",
-    cedula: "",
-    estado_civil: "",
-    profesion: "",
-    email: "",
-    telefono1: "",
-    telefono2: "",
-    direccion: "",
-  });
+  const [showEditCancelConfirm, setShowEditCancelConfirm] = useState(false);
+  const [ignoreEditCloseConfirmation, setIgnoreEditCloseConfirmation] = useState(false);
+  const toPreClienteNumber = useCallback((value: number | null | undefined) => {
+    return value === null || value === undefined ? "" : String(value);
+  }, []);
+
+  const ignoredLoteIds = useMemo(
+    () =>
+      editingRecord
+        ? editingRecord.productos
+            .filter((producto) => producto.tipo_producto === "LOTE")
+            .map((producto) => String(producto.id_lote ?? ""))
+            .filter((id) => id !== "")
+        : [],
+    [editingRecord]
+  );
+
+  const ignoredCenizarioIds = useMemo(
+    () =>
+      editingRecord
+        ? editingRecord.productos
+            .filter((producto) => producto.tipo_producto === "CENIZARIO")
+            .map((producto) => String(producto.id_tipo_cenizario ?? ""))
+            .filter((id) => id !== "")
+        : [],
+    [editingRecord]
+  );
+
+  const buildEditInitialValues = useCallback((record: PreContratoDetalle): PreClienteFormValues => {
+    const lotes = record.productos.filter((producto) => producto.tipo_producto === "LOTE");
+    const cenizarios = record.productos.filter((producto) => producto.tipo_producto === "CENIZARIO");
+    const cremaciones = record.productos.filter((producto) => producto.tipo_producto === "CREMACION");
+    const paquetes = record.productos.filter((producto) => producto.tipo_producto === "PAQUETE_FUNERARIO");
+
+    const tipos: ProductType[] = [];
+    if (lotes.length > 0) tipos.push("LOTE");
+    if (cenizarios.length > 0) tipos.push("CENIZARIO");
+    if (cremaciones.length > 0) tipos.push("CREMACION");
+    if (paquetes.length > 0) tipos.push("PAQUETE_FUNERARIO");
+
+    const firstJardinFromLote =
+      lotes[0]?.lote?.id_jardin ?? cenizarios[0]?.tipo_cenizario?.id_jardin ?? "";
+
+    return {
+      numero_formulario: record.contrato.numero_formulario || "",
+      numero_contrato: record.contrato.numero_contrato || "",
+      nombre_completo: record.cliente?.nombre_completo || "",
+      estado_civil: record.cliente?.estado_civil || "",
+      profesion: record.cliente?.profesion || "",
+      identificacion: record.cliente?.cedula || "",
+      direccion: record.cliente?.direccion || "",
+      correo: record.cliente?.email || "",
+      telefono1: record.cliente?.telefono1 || "",
+      telefono2: record.cliente?.telefono2 || "",
+      id_jardin: firstJardinFromLote ? String(firstJardinFromLote) : "",
+      tipos_paquete_funerario: tipos,
+      cantidad_lotes: toPreClienteNumber(record.contrato.cantidad_lotes),
+      lote_numeros: lotes.map((producto) => toInputNumber(producto.id_lote)),
+      tipo_lote: "",
+      cenizario_numeros: cenizarios.map((producto) => toInputNumber(producto.id_tipo_cenizario)),
+      id_paquete_funerario: paquetes[0]?.id_paquete ? String(paquetes[0].id_paquete) : "",
+      tipo_cremacion: cremaciones[0]?.id_tipo_cremacion ? String(cremaciones[0].id_tipo_cremacion) : "",
+      precio: toPreClienteNumber(record.contrato.monto_arrendamiento_total),
+      plazo_anios: toPreClienteNumber(record.contrato.plazo_anios),
+      total_meses: toPreClienteNumber(record.contrato.total_meses),
+      cuota_fija: toPreClienteNumber(record.contrato.cuota_mensual),
+      dia_pago: toPreClienteNumber(record.contrato.dia_pago_mensual),
+      tasa_interes_anual: toPreClienteNumber(record.contrato.tasa_interes_anual),
+      prima: toPreClienteNumber(record.contrato.monto_entregado_inicial),
+      saldo: toPreClienteNumber(record.contrato.saldo_pendiente),
+      monto_mantenimiento_anual: toPreClienteNumber(record.contrato.monto_mantenimiento_anual),
+      anio_inicio_mantenimiento: toPreClienteNumber(record.contrato.anio_inicio_mantenimiento),
+      observaciones: record.contrato.observaciones_contrato || "",
+      fecha: toDateInput(record.contrato.fecha_firma),
+      metodo_pago: "",
+      vendedor: String(record.contrato.id_vendedor || ""),
+    };
+  }, [toPreClienteNumber]);
 
   const loadPrecontratos = useCallback(async () => {
     setLoading(true);
@@ -434,25 +497,13 @@ export default function DashboardPreContratos() {
       toast.error("Esta vista es solo lectura para vendedor");
       return;
     }
+    setShowEditCancelConfirm(false);
+    setIgnoreEditCloseConfirmation(false);
     setEditingRecord(record);
-    setEditForm({
-      nombre_completo: record.cliente?.nombre_completo || "",
-      cedula: record.cliente?.cedula || "",
-      estado_civil: record.cliente?.estado_civil || "",
-      profesion: record.cliente?.profesion || "",
-      email: record.cliente?.email || "",
-      telefono1: record.cliente?.telefono1 || "",
-      telefono2: record.cliente?.telefono2 || "",
-      direccion: record.cliente?.direccion || "",
-    });
     setEditOpen(true);
   };
 
-  const updateEditField = (field: keyof EditFormData, value: string) => {
-    setEditForm((prev) => ({ ...prev, [field]: value }));
-  };
-
-  const handleSaveEdit = async () => {
+  const handleSaveEdit = async ({ payload }: PreClienteSubmitPayload) => {
     if (!isAdmin) {
       toast.error("Esta acción solo está disponible para administrador");
       return;
@@ -462,42 +513,63 @@ export default function DashboardPreContratos() {
       toast.error("No se pudo identificar el cliente para editar");
       return;
     }
-    if (!editForm.nombre_completo.trim()) {
-      toast.error("El nombre completo es obligatorio");
-      return;
-    }
+    const idContrato = editingRecord.contrato.id_contrato;
+    const idCliente = editingRecord.cliente.id_cliente;
 
-    setSavingEdit(true);
+    setProcessingId(idContrato);
     try {
-      const idCliente = editingRecord.cliente.id_cliente;
-      const folderKey = `cliente-${idCliente}`;
-
       const { error: clienteError } = await supabase
         .from("cliente")
-        .update({
-          nombre_completo: editForm.nombre_completo.trim(),
-          cedula: editForm.cedula.trim() || null,
-          estado_civil: editForm.estado_civil.trim() || null,
-          profesion: editForm.profesion.trim() || null,
-          email: editForm.email.trim() || null,
-          telefono1: editForm.telefono1.trim() || null,
-          telefono2: editForm.telefono2.trim() || null,
-          direccion: editForm.direccion.trim() || null,
-        })
+        .update(payload.cliente)
         .eq("id_cliente", idCliente);
 
       if (clienteError) throw clienteError;
 
+      const contratoPayload = { ...payload.contrato } as Record<string, unknown>;
+      if (!supportsNumeroFormulario) {
+        delete contratoPayload.numero_formulario;
+      }
+
+      const { error: contratoError } = await supabase
+        .from("contrato")
+        .update(contratoPayload)
+        .eq("id_contrato", idContrato);
+
+      if (contratoError) throw contratoError;
+
+      const { error: deleteProductoError } = await supabase
+        .from("contrato_producto")
+        .delete()
+        .eq("id_contrato", idContrato);
+
+      if (deleteProductoError) {
+        throw deleteProductoError;
+      }
+
+      if (payload.productos.length > 0) {
+        const productosParaActualizar = payload.productos.map((producto) => ({
+          ...producto,
+          id_contrato: idContrato,
+        }));
+
+        const { error: insertProductoError } = await supabase
+          .from("contrato_producto")
+          .insert(productosParaActualizar);
+      if (insertProductoError) {
+          throw insertProductoError;
+        }
+      }
+
       toast.success("Precontrato actualizado correctamente");
+      setIgnoreEditCloseConfirmation(true);
       setEditOpen(false);
       setEditingRecord(null);
       await loadPrecontratos();
-      setOpenFolders((prev) => (prev.includes(folderKey) ? prev : [...prev, folderKey]));
     } catch (error) {
       console.error("Error actualizando precontrato:", error);
       toast.error("No se pudo actualizar el precontrato");
     } finally {
-      setSavingEdit(false);
+      setProcessingId(null);
     }
   };
 
@@ -597,7 +669,7 @@ export default function DashboardPreContratos() {
             </p>
             {!supportsNumeroFormulario && (
               <p className="text-xs text-amber-300 mt-1">
-                Modo compatibilidad activo: aplica la migracion de numero_formulario para mostrar
+                Modo compatibilidad activo: aplica la migración de número_formulario para mostrar
                 ese dato en todos los registros.
               </p>
             )}
@@ -694,7 +766,7 @@ export default function DashboardPreContratos() {
                             <div className="flex flex-wrap items-start justify-between gap-3">
                               <div>
                                 <CardTitle className="text-base">
-                                  {item.contrato.numero_formulario || "Sin numero de formulario"}
+                                  {item.contrato.numero_formulario || "Sin número de formulario"}
                                 </CardTitle>
                                 <CardDescription>
                                   Estado: {item.contrato.estado_contrato} - Fecha:{" "}
@@ -760,13 +832,13 @@ export default function DashboardPreContratos() {
                                   Correo: {item.cliente?.email || "No registrado"}
                                 </p>
                                 <p className="text-xs text-muted-foreground">
-                                  Telefono 1: {item.cliente?.telefono1 || "No registrado"}
+                                  Teléfono 1: {item.cliente?.telefono1 || "No registrado"}
                                 </p>
                                 <p className="text-xs text-muted-foreground">
-                                  Telefono 2: {item.cliente?.telefono2 || "No registrado"}
+                                  Teléfono 2: {item.cliente?.telefono2 || "No registrado"}
                                 </p>
                                 <p className="text-xs text-muted-foreground">
-                                  Direccion: {item.cliente?.direccion || "No registrada"}
+                                  Dirección: {item.cliente?.direccion || "No registrada"}
                                 </p>
                               </div>
                               <div className="rounded-md border border-border/70 p-3">
@@ -780,7 +852,7 @@ export default function DashboardPreContratos() {
                                       {formatCurrency(item.contrato.monto_arrendamiento_total)}
                                     </span>
                                   </p>
-                                  <p>Plazo (anios): {item.contrato.plazo_anios ?? "No definido"}</p>
+                                  <p>Plazo (años): {item.contrato.plazo_anios ?? "No definido"}</p>
                                   <p>
                                     Cuota mensual: {formatCurrency(item.contrato.cuota_mensual)}
                                   </p>
@@ -809,7 +881,7 @@ export default function DashboardPreContratos() {
                                     {formatCurrency(item.contrato.monto_mantenimiento_anual)}
                                   </p>
                                   <p>
-                                    Anio inicio mantenimiento:{" "}
+                                    Año inicio mantenimiento:{" "}
                                     {item.contrato.anio_inicio_mantenimiento ?? "No definido"}
                                   </p>
                                   <p>
@@ -903,104 +975,82 @@ export default function DashboardPreContratos() {
       </div>
 
       {isAdmin && (
-        <Dialog open={editOpen} onOpenChange={setEditOpen}>
-        <DialogContent className="max-w-3xl">
-          <DialogHeader>
-            <DialogTitle>Editar precontrato</DialogTitle>
-            <DialogDescription>
-              Actualiza unicamente los datos personales del cliente.
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-            <div className="space-y-2">
-              <Label htmlFor="nombre_completo">Nombre completo *</Label>
-              <Input
-                id="nombre_completo"
-                value={editForm.nombre_completo}
-                onChange={(e) => updateEditField("nombre_completo", e.target.value)}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="cedula">Cedula</Label>
-              <Input
-                id="cedula"
-                value={editForm.cedula}
-                onChange={(e) => updateEditField("cedula", e.target.value)}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="estado_civil">Estado civil</Label>
-              <Select
-                value={editForm.estado_civil || undefined}
-                onValueChange={(value) => updateEditField("estado_civil", value)}
-              >
-                <SelectTrigger id="estado_civil">
-                  <SelectValue placeholder="Seleccione estado civil" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Soltero/a">Soltero/a</SelectItem>
-                  <SelectItem value="Casado/a">Casado/a</SelectItem>
-                  <SelectItem value="Divorciado/a">Divorciado/a</SelectItem>
-                  <SelectItem value="Viudo/a">Viudo/a</SelectItem>
-                  <SelectItem value="Union Libre">Union Libre</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="profesion">Profesion</Label>
-              <Input
-                id="profesion"
-                value={editForm.profesion}
-                onChange={(e) => updateEditField("profesion", e.target.value)}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="email">Correo</Label>
-              <Input
-                id="email"
-                type="email"
-                value={editForm.email}
-                onChange={(e) => updateEditField("email", e.target.value)}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="telefono1">Telefono 1</Label>
-              <Input
-                id="telefono1"
-                value={editForm.telefono1}
-                onChange={(e) => updateEditField("telefono1", e.target.value)}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="telefono2">Telefono 2</Label>
-              <Input
-                id="telefono2"
-                value={editForm.telefono2}
-                onChange={(e) => updateEditField("telefono2", e.target.value)}
-              />
-            </div>
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="direccion">Direccion</Label>
-            <Textarea
-              id="direccion"
-              value={editForm.direccion}
-              onChange={(e) => updateEditField("direccion", e.target.value)}
+        <Dialog
+          open={editOpen}
+          onOpenChange={(open) => {
+            if (!open) {
+              if (ignoreEditCloseConfirmation) {
+                setIgnoreEditCloseConfirmation(false);
+                setEditOpen(false);
+                setEditingRecord(null);
+                return;
+              }
+              setShowEditCancelConfirm(true);
+              return;
+            }
+            setEditOpen(open);
+            setShowEditCancelConfirm(false);
+            setIgnoreEditCloseConfirmation(false);
+          }}
+        >
+          <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Editar precontrato</DialogTitle>
+              <DialogDescription className="text-muted-foreground">
+                Puedes editar toda la información del precontrato y ajustar sus productos.
+              </DialogDescription>
+            </DialogHeader>
+            <PreClienteForm
+              key={editingRecord ? `precontrato-editar-${editingRecord.contrato.id_contrato}` : "precontrato-editar"}
+              initialValues={editingRecord ? buildEditInitialValues(editingRecord) : undefined}
+              onComplete={handleSaveEdit}
+              submitButtonLabel="Guardar cambios"
+              showConfirmation={false}
+              confirmOnSubmit={true}
+              saveConfirmationTitle="Guardar cambios del precontrato"
+              saveConfirmationDescription="¿Estás seguro de guardar los cambios realizados?"
+              saveConfirmationActionLabel="Guardar cambios"
+              useWhiteGraphBackground={true}
+              useDarkGraphText={true}
+              skipNumeroFormularioUniquenessCheck={true}
+              hideNumeroFormulario={true}
+              ignoredLoteIds={ignoredLoteIds}
+              ignoredCenizarioIds={ignoredCenizarioIds}
             />
-          </div>
+          </DialogContent>
+        </Dialog>
+      )}
 
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setEditOpen(false)} disabled={savingEdit}>
-              Cancelar
-            </Button>
-            <Button onClick={() => void handleSaveEdit()} disabled={savingEdit}>
-              {savingEdit ? "Guardando..." : "Guardar cambios"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {isAdmin && (
+        <AlertDialog
+          open={showEditCancelConfirm}
+          onOpenChange={(open) => {
+            if (!open) {
+              setShowEditCancelConfirm(false);
+            }
+          }}
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Cancelar edición</AlertDialogTitle>
+              <AlertDialogDescription>
+                ¿Seguro deseas salir sin guardar? Los cambios no se conservarán.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Seguir editando</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={() => {
+                  setShowEditCancelConfirm(false);
+                  setIgnoreEditCloseConfirmation(true);
+                  setEditOpen(false);
+                }}
+              >
+                Sí, salir sin guardar
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       )}
 
       {isAdmin && (
@@ -1035,8 +1085,8 @@ export default function DashboardPreContratos() {
           <AlertDialogHeader>
             <AlertDialogTitle>Formalizar precontrato</AlertDialogTitle>
             <AlertDialogDescription>
-              Confirma si deseas formalizar este registro. Al continuar, su estado pasara de
-              PRECONTRATO a CONTRATO y dejara de aparecer en esta vista.
+              Confirma si deseas formalizar este registro. Al continuar, su estado pasará de
+              PRECONTRATO a CONTRATO y dejará de aparecer en esta vista.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -1052,4 +1102,11 @@ export default function DashboardPreContratos() {
     </div>
   );
 }
+
+
+
+
+
+
+
 

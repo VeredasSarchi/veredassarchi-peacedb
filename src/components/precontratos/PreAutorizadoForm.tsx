@@ -1,4 +1,5 @@
-import { useForm } from "react-hook-form";
+import { useEffect } from "react";
+import { useFieldArray, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { Button } from "@/components/ui/button";
@@ -11,92 +12,159 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
-import { supabase } from "@/integrations/supabase/client";
-import { toast } from "sonner";
 
-const preAutorizadoSchema = z.object({
+export type PreAutorizadoDraft = {
+  nombre: string;
+  cedula: string;
+};
+
+const preAutorizadoItemSchema = z.object({
   nombre: z.string().min(1, "El nombre es requerido"),
   cedula: z.string().optional(),
+});
+
+const preAutorizadoSchema = z.object({
+  autorizados: z.array(preAutorizadoItemSchema).max(4, "Máximo de 4 pre-autorizados"),
 });
 
 type PreAutorizadoFormValues = z.infer<typeof preAutorizadoSchema>;
 
 interface PreAutorizadoFormProps {
-  preClienteId: string;
+  preAutorizados: PreAutorizadoDraft[];
+  onSave: (autorizados: PreAutorizadoDraft[]) => void;
   onComplete: () => void;
   onSkip: () => void;
+  onBack: (autorizados: PreAutorizadoDraft[]) => void;
 }
 
-export function PreAutorizadoForm({ preClienteId, onComplete, onSkip }: PreAutorizadoFormProps) {
+function sanitizeAutorizados(values?: PreAutorizadoDraft[]) {
+  const normalized = values?.filter((item) => item.nombre.trim().length > 0) ?? [];
+  return normalized.length > 0 ? normalized : [{ nombre: "", cedula: "" }];
+}
+
+export function PreAutorizadoForm({
+  preAutorizados,
+  onSave,
+  onComplete,
+  onSkip,
+  onBack,
+}: PreAutorizadoFormProps) {
   const form = useForm<PreAutorizadoFormValues>({
     resolver: zodResolver(preAutorizadoSchema),
     defaultValues: {
-      nombre: "",
-      cedula: "",
+      autorizados: sanitizeAutorizados(preAutorizados),
     },
   });
 
-  const onSubmit = async (values: PreAutorizadoFormValues) => {
-    const idContrato = Number(preClienteId);
-    if (!Number.isFinite(idContrato)) {
-      toast.error("No se pudo identificar el contrato");
-      return;
-    }
+  const { fields, append, remove } = useFieldArray({
+    control: form.control,
+    name: "autorizados",
+  });
 
-    const { error } = await supabase.from("contrato_autorizados").insert({
-      id_contrato: idContrato,
-      nombre: values.nombre,
-      cedula: values.cedula || null,
-    });
+  useEffect(() => {
+    form.reset({ autorizados: sanitizeAutorizados(preAutorizados) });
+  }, [preAutorizados, form]);
 
-    if (error) {
-      console.error("Error guardando pre-autorizado:", error);
-      toast.error("No se pudo registrar el pre-autorizado");
-      return;
-    }
-
-    toast.success("Pre-autorizado registrado correctamente");
+  const onSubmit = (values: PreAutorizadoFormValues) => {
+    onSave(values.autorizados);
     onComplete();
+  };
+
+  const handleGoBack = () => {
+    onBack(form.getValues("autorizados"));
   };
 
   return (
     <Form {...form}>
       <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <FormField
-            control={form.control}
-            name="nombre"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>Nombre Completo *</FormLabel>
-                <FormControl>
-                  <Input placeholder="Nombre completo del autorizado" {...field} />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
+        <p className="text-sm text-muted-foreground">
+          Puede registrar de 1 a 4 pre-autorizados. Si no desea agregar ninguno, presione Omitir.
+        </p>
 
-          <FormField
-            control={form.control}
-            name="cedula"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>Cédula</FormLabel>
-                <FormControl>
-                  <Input placeholder="Número de cédula" {...field} />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-        </div>
+        {fields.map((field, index) => (
+          <div
+            key={field.id}
+            className="grid grid-cols-1 gap-4 md:grid-cols-[1fr_1fr_auto] md:gap-4"
+          >
+            <FormField
+              control={form.control}
+              name={`autorizados.${index}.nombre` as const}
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Nombre Completo *</FormLabel>
+                  <FormControl>
+                    <Input placeholder="Nombre completo del autorizado" {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
 
-        <div className="flex justify-between">
-          <Button type="button" onClick={onSkip}> 
-            Omitir
+            <FormField
+              control={form.control}
+              name={`autorizados.${index}.cedula` as const}
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Cédula</FormLabel>
+                  <FormControl>
+                    <Input placeholder="Número de cédula" {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <div className="flex items-end">
+              <Button
+                type="button"
+                variant="secondary"
+                className="border-input bg-background text-foreground hover:bg-muted"
+                onClick={() => remove(index)}
+                disabled={fields.length === 1}
+              >
+                Quitar
+              </Button>
+            </div>
+          </div>
+        ))}
+
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <Button
+            type="button"
+            variant="secondary"
+            className="border-input bg-background text-foreground hover:bg-muted"
+            onClick={handleGoBack}
+          >
+            Volver a Pre-Cliente
           </Button>
-          <Button type="submit">Siguiente</Button>
+
+          <Button
+            type="button"
+            variant="secondary"
+            className="border-input bg-background text-foreground hover:bg-muted"
+            onClick={() => append({ nombre: "", cedula: "" })}
+            disabled={fields.length >= 4}
+          >
+            Agregar otro pre-autorizado ({fields.length}/4)
+          </Button>
+
+          <div className="flex gap-2">
+            <Button
+              type="button"
+              variant="secondary"
+              className="border-input bg-background text-foreground hover:bg-muted"
+              onClick={onSkip}
+            >
+              Omitir
+            </Button>
+            <Button
+              type="submit"
+              variant="default"
+              className="bg-primary text-primary-foreground"
+            >
+              Siguiente
+            </Button>
+          </div>
         </div>
       </form>
     </Form>

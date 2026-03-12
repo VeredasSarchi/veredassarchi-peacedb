@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
@@ -11,8 +12,12 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
-import { supabase } from "@/integrations/supabase/client";
-import { toast } from "sonner";
+
+export type BeneficiarioDraft = {
+  nombre: string;
+  cedula: string;
+  contacto: string;
+};
 
 const beneficiarioSchema = z.object({
   nombre: z.string().min(1, "El nombre es requerido"),
@@ -23,43 +28,55 @@ const beneficiarioSchema = z.object({
 type BeneficiarioFormValues = z.infer<typeof beneficiarioSchema>;
 
 interface BeneficiarioFormProps {
-  preClienteId: string;
+  initialValues?: BeneficiarioDraft;
+  onSave: (values: BeneficiarioDraft) => void;
   onComplete: () => void;
-  onSkip: () => void;
+  onBack: (values: BeneficiarioDraft) => void;
+  disabled?: boolean;
 }
 
-export function BeneficiarioForm({ preClienteId, onComplete, onSkip }: BeneficiarioFormProps) {
+export function BeneficiarioForm({
+  initialValues,
+  onSave,
+  onComplete,
+  onBack,
+  disabled = false,
+}: BeneficiarioFormProps) {
   const form = useForm<BeneficiarioFormValues>({
     resolver: zodResolver(beneficiarioSchema),
     defaultValues: {
       nombre: "",
       cedula: "",
       contacto: "",
+      ...initialValues,
     },
   });
 
-  const onSubmit = async (values: BeneficiarioFormValues) => {
-    const idContrato = Number(preClienteId);
-    if (!Number.isFinite(idContrato)) {
-      toast.error("No se pudo identificar el contrato");
-      return;
-    }
-
-    const { error } = await supabase.from("contrato_beneficiarios").insert({
-      id_contrato: idContrato,
-      nombre: values.nombre,
-      cedula: values.cedula || null,
-      contacto: values.contacto || null,
+  useEffect(() => {
+    form.reset({
+      nombre: "",
+      cedula: "",
+      contacto: "",
+      ...initialValues,
     });
+  }, [initialValues, form]);
 
-    if (error) {
-      console.error("Error guardando beneficiario:", error);
-      toast.error("No se pudo registrar el beneficiario");
-      return;
-    }
-
-    toast.success("Beneficiario registrado correctamente");
+  const onSubmit = (values: BeneficiarioFormValues) => {
+    onSave({
+      nombre: values.nombre,
+      cedula: values.cedula || "",
+      contacto: values.contacto || "",
+    });
     onComplete();
+  };
+
+  const handleGoBack = () => {
+    const currentValues = form.getValues();
+    onBack({
+      nombre: currentValues.nombre || "",
+      cedula: currentValues.cedula || "",
+      contacto: currentValues.contacto || "",
+    });
   };
 
   return (
@@ -110,10 +127,23 @@ export function BeneficiarioForm({ preClienteId, onComplete, onSkip }: Beneficia
         </div>
 
         <div className="flex justify-between">
-          <Button type="button" onClick={onSkip}>
-            Omitir
+          <Button
+            type="button"
+            variant="secondary"
+            className="border-input bg-background text-foreground hover:bg-muted"
+            disabled={disabled}
+            onClick={handleGoBack}
+          >
+            Volver a Pre-Autorizados
           </Button>
-          <Button type="submit">Completar</Button>
+          <Button
+            type="submit"
+            variant="default"
+            className="bg-primary text-primary-foreground"
+            disabled={disabled}
+          >
+            {disabled ? "Guardando..." : "Completar"}
+          </Button>
         </div>
       </form>
     </Form>
