@@ -591,12 +591,7 @@ export default function Cremaciones() {
                       </div>
                     </button>
                     <div className="flex gap-2">
-                      <Button
-                        size="sm"
-                        variant="secondary"
-                        className="text-white"
-                        onClick={() => openEdit(cremacion)}
-                      >
+                      <Button size="sm" variant="secondary" onClick={() => openEdit(cremacion)}>
                         <Pencil className="h-4 w-4" />
                         Editar
                       </Button>

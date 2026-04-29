@@ -14,6 +14,8 @@ import PaquetesFunerarios from "@/pages/PaquetesFunerarios";
 import Cremaciones from "@/pages/Cremaciones";
 import Jardines from "@/pages/Jardines";
 import JardinDetalle from "@/pages/JardinDetalle";
+import OneDriveAdmin from "@/pages/OneDriveAdmin";
+import OneDriveCallback from "@/pages/OneDriveCallback";
 import NotFound from "@/pages/NotFound";
 import Navigation from "@/components/Navigation";
 
@@ -116,6 +118,24 @@ function AppLayout() {
             element={
               <ProtectedRoute allowedRoles={["admin", "vendedor"]}>
                 <JardinDetalle />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/onedrive-admin"
+            element={
+              <ProtectedRoute allowedRoles={["admin"]}>
+                <OneDriveAdmin />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/onedrive-callback"
+            element={
+              <ProtectedRoute allowedRoles={["admin"]}>
+                <OneDriveCallback />
               </ProtectedRoute>
             }
           />

@@ -36,13 +36,18 @@ import { toast } from "sonner";
 
 const preClienteSchema = z.object({
   numero_formulario: z.string().min(1, "El número de formulario es requerido"),
-  numero_contrato: z.string().optional(),
+  numero_contrato: z.string().max(50, "El número de contrato no puede superar 50 caracteres").optional(),
   nombre_completo: z.string().min(1, "El nombre completo es requerido"),
   estado_civil: z.string().optional(),
   profesion: z.string().optional(),
-  identificacion: z.string().optional(),
+  identificacion: z.string().max(30, "La identificación no puede superar 30 caracteres").optional(),
   direccion: z.string().optional(),
-  correo: z.string().email("Correo electrónico inválido").optional().or(z.literal("")),
+  correo: z
+    .string()
+    .email("Correo electrónico inválido")
+    .max(120, "El correo no puede superar 120 caracteres")
+    .optional()
+    .or(z.literal("")),
   telefono1: z.string().optional(),
   telefono2: z.string().optional(),
   id_jardin: z.string().optional(),
@@ -840,10 +845,37 @@ export function PreClienteForm({
         }
       }
 
+      const numeroContratoIngresado = values.numero_contrato?.trim() || "";
+      if (numeroContratoIngresado.length > 50) {
+        form.setError("numero_contrato", {
+          message: "El número de contrato no puede superar 50 caracteres",
+        });
+        toast.error("El número de contrato no puede superar 50 caracteres");
+        return;
+      }
+
+      const identificacion = values.identificacion?.trim() || "";
+      if (identificacion.length > 30) {
+        form.setError("identificacion", {
+          message: "La identificación no puede superar 30 caracteres",
+        });
+        toast.error("La identificación no puede superar 30 caracteres");
+        return;
+      }
+
+      const correo = values.correo?.trim() || "";
+      if (correo.length > 120) {
+        form.setError("correo", {
+          message: "El correo no puede superar 120 caracteres",
+        });
+        toast.error("El correo no puede superar 120 caracteres");
+        return;
+      }
+
       const clientePayload: Omit<TablesInsert<"cliente">, "id_cliente"> = {
         nombre_completo: values.nombre_completo,
-        cedula: values.identificacion || null,
-        email: values.correo || null,
+        cedula: identificacion || null,
+        email: correo || null,
         direccion: values.direccion || null,
         estado_civil: values.estado_civil || null,
         profesion: values.profesion || null,
@@ -852,7 +884,7 @@ export function PreClienteForm({
         observaciones: values.observaciones || null,
       };
 
-      const numeroContrato = values.numero_contrato?.trim() || `PRE-${String(Date.now()).slice(-8)}`;
+      const numeroContrato = numeroContratoIngresado || `PRE-${String(Date.now()).slice(-8)}`;
 
       const contratoPayload: PreClienteContratoDraft = {
         numero_contrato: numeroContrato,
@@ -1101,7 +1133,7 @@ export function PreClienteForm({
 
         <div className="border-t border-border pt-6">
           <h3
-            className={`text-lg font-semibold mb-4 ${hideNumeroFormulario ? "text-foreground" : "text-slate-900"}`}
+            className={`mb-4 text-lg font-semibold ${hideNumeroFormulario ? "text-foreground" : "text-text-primary"}`}
           >
             Información de Producto y Lotes
           </h3>
@@ -1393,31 +1425,31 @@ export function PreClienteForm({
                 useWhiteGraphBackground ? "bg-white" : "bg-muted/20"
               }`}
             >
-              <h4 className="text-sm font-semibold text-slate-900">
+              <h4 className="text-sm font-semibold text-text-primary">
                 Selección gráfica del jardín
               </h4>
 
-              <div className="flex flex-wrap gap-4 text-xs text-slate-900">
+              <div className="flex flex-wrap gap-4 text-xs text-text-primary">
                 <div className="flex items-center gap-2">
-                  <span className="h-3 w-3 rounded-full bg-emerald-500/80" />
+                  <span className="h-3 w-3 rounded-full bg-success" />
                   Disponible
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className="h-3 w-3 rounded-full bg-violet-300/80" />
+                  <span className="h-3 w-3 rounded-full bg-accent" />
                   Familiar
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className="h-3 w-3 rounded-full bg-amber-500/80" />
+                  <span className="h-3 w-3 rounded-full bg-warning" />
                   Pre-contrato
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className="h-3 w-3 rounded-full bg-rose-500/80" />
+                  <span className="h-3 w-3 rounded-full bg-destructive" />
                   Vendido
                 </div>
               </div>
 
               <div className="space-y-2">
-                <p className="text-xs font-semibold text-slate-800">
+                <p className="text-xs font-semibold text-text-primary">
                   Lotes por fila
                 </p>
                 {filasLotes.length === 0 ? (
@@ -1427,7 +1459,7 @@ export function PreClienteForm({
                 ) : (
                   filasLotes.map((fila) => (
                     <div key={`fila-${fila}`} className="flex items-start gap-3">
-                      <div className="w-7 pt-2 text-xs font-bold text-slate-700">
+                      <div className="w-7 pt-2 text-xs font-bold text-text-secondary">
                         F{fila}
                       </div>
                       <div className="grid flex-1 grid-cols-3 gap-2 sm:grid-cols-5 md:grid-cols-8">
@@ -1444,12 +1476,12 @@ export function PreClienteForm({
                             !isSelected;
                           const statusClass =
                             status === "contract"
-                              ? "bg-rose-500/80 text-white"
+                              ? "bg-destructive text-destructive-foreground"
                               : status === "precontract"
-                              ? "bg-amber-500/80 text-white"
-                          : status === "familiar"
-                              ? "bg-violet-300/80 text-slate-900"
-                              : "bg-emerald-500/80 text-white";
+                              ? "bg-warning text-warning-foreground"
+                              : status === "familiar"
+                              ? "bg-accent text-accent-foreground"
+                              : "bg-success text-success-foreground";
 
                           return (
                             <button
@@ -1504,7 +1536,7 @@ export function PreClienteForm({
                                   ? "cursor-not-allowed opacity-70"
                                   : "hover:brightness-110"
                               } ${statusClass} ${
-                                isSelected ? "ring-2 ring-offset-1 ring-slate-900" : ""
+                                isSelected ? "ring-2 ring-primary ring-offset-1" : ""
                               }`}
                               title={`${lote.numero_lote} - ${
                                 status === "available"
@@ -1518,7 +1550,7 @@ export function PreClienteForm({
                             >
                               {lote.numero_lote}
                               {clickedIsFamily && status !== "familiar" && (
-                              <span className="absolute top-1 right-1 rounded-full bg-violet-300/90 px-1 text-[9px] font-bold text-slate-900">
+                              <span className="absolute top-1 right-1 rounded-full bg-accent px-1 text-[9px] font-bold text-accent-foreground">
                                   F
                                 </span>
                               )}
@@ -1532,7 +1564,7 @@ export function PreClienteForm({
               </div>
 
               <div className="space-y-2">
-                <p className="text-xs font-semibold text-slate-800">
+                <p className="text-xs font-semibold text-text-primary">
                   Cenizarios
                 </p>
                 {cenizariosDelJardin.length === 0 ? (
@@ -1547,10 +1579,10 @@ export function PreClienteForm({
                       const status = cenizarioStatus[cenizario.id_tipo_cenizario];
                       const statusClass =
                         status === "contract"
-                          ? "bg-rose-500/80 text-white"
+                          ? "bg-destructive text-destructive-foreground"
                           : status === "precontract"
-                          ? "bg-amber-500/80 text-white"
-                          : "bg-emerald-500/80 text-white";
+                          ? "bg-warning text-warning-foreground"
+                          : "bg-success text-success-foreground";
 
                       return (
                         <button
@@ -1570,10 +1602,10 @@ export function PreClienteForm({
                               ? "cursor-not-allowed opacity-70"
                               : "hover:brightness-110"
                           } ${statusClass} ${
-                            isSelected ? "ring-2 ring-offset-1 ring-slate-900" : ""
+                            isSelected ? "ring-2 ring-primary ring-offset-1" : ""
                           }`}
                         >
-                          <div className="text-xs font-semibold text-slate-900">
+                          <div className="text-xs font-semibold text-text-primary">
                             {cenizario.numero_cenizario}
                           </div>
                           <div
@@ -1593,7 +1625,7 @@ export function PreClienteForm({
 
         <div className="border-t border-border pt-6">
           <h3
-            className={`text-lg font-semibold mb-4 ${hideNumeroFormulario ? "text-foreground" : "text-slate-900"}`}
+            className={`mb-4 text-lg font-semibold ${hideNumeroFormulario ? "text-foreground" : "text-text-primary"}`}
           >
             Condiciones Financieras
           </h3>
@@ -1815,7 +1847,7 @@ export function PreClienteForm({
 
             <div className="md:col-span-2 pt-1">
               <p
-                className={`text-sm font-medium ${hideNumeroFormulario ? "text-muted-foreground" : "text-slate-700"}`}
+                className={`text-sm font-medium ${hideNumeroFormulario ? "text-muted-foreground" : "text-text-secondary"}`}
               >
                 Campos calculados automáticamente
               </p>
@@ -1832,7 +1864,7 @@ export function PreClienteForm({
                       type="number"
                       placeholder="Se calcula con el plazo"
                       readOnly
-                      className="bg-slate-100/70"
+                      className="bg-muted"
                       {...field}
                     />
                   </FormControl>
@@ -1852,7 +1884,7 @@ export function PreClienteForm({
                       type="text"
                       placeholder="Se calcula automáticamente"
                       readOnly
-                      className="bg-slate-100/70"
+                      className="bg-muted"
                       {...field}
                     />
                   </FormControl>
@@ -1872,7 +1904,7 @@ export function PreClienteForm({
                       type="text"
                       placeholder="Se calcula automáticamente"
                       readOnly
-                      className="bg-slate-100/70"
+                      className="bg-muted"
                       {...field}
                     />
                   </FormControl>

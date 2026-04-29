@@ -73,17 +73,17 @@ const STATUS_LABELS: Record<LoteStatus, string> = {
 };
 
 const STATUS_STYLES: Record<LoteStatus, string> = {
-  available: "bg-emerald-500/80 text-white",
-  precontract: "bg-amber-500/80 text-white",
-  contract: "bg-rose-500/80 text-white",
-  occupant: "bg-slate-400/80 text-slate-900",
-  familiar: "bg-violet-300/80 text-slate-900",
+  available: "bg-success text-success-foreground",
+  precontract: "bg-warning text-warning-foreground",
+  contract: "bg-destructive text-destructive-foreground",
+  occupant: "bg-secondary-soft text-text-primary",
+  familiar: "bg-accent text-accent-foreground",
 };
 
 const CENIZARIO_STYLES: Record<CenizarioStatus, string> = {
-  available: "bg-emerald-500/80 text-white",
-  precontract: "bg-amber-500/80 text-white",
-  contract: "bg-rose-500/80 text-white",
+  available: "bg-success text-success-foreground",
+  precontract: "bg-warning text-warning-foreground",
+  contract: "bg-destructive text-destructive-foreground",
 };
 
 function UrnIcon({ className }: { className?: string }) {
@@ -760,14 +760,14 @@ export default function JardinDetalle() {
               <>
                 <Button
                   onClick={() => setIsDialogOpen(true)}
-                  className="bg-sky-400 text-slate-900 hover:bg-sky-300"
+                  className="bg-secondary text-secondary-foreground hover:bg-secondary/90"
                 >
                   <TombIcon className="mr-2 h-4 w-4" />
                   Agregar lote
                 </Button>
                 <Button
                   onClick={() => openCenizarioDialog()}
-                  className="bg-pink-300 text-slate-900 hover:bg-pink-200"
+                  className="bg-accent text-accent-foreground hover:bg-accent/90"
                 >
                   <UrnIcon className="mr-2 h-4 w-4" />
                   Agregar Cenizario
@@ -795,23 +795,23 @@ export default function JardinDetalle() {
                 <>
                   <div className="flex flex-wrap gap-4 mb-6 text-sm">
                     <div className="flex items-center gap-2">
-                      <span className="h-3 w-3 rounded-full bg-emerald-500/80" />
+                      <span className="h-3 w-3 rounded-full bg-success" />
                       Disponible ({counts.available})
                     </div>
                     <div className="flex items-center gap-2">
-                      <span className="h-3 w-3 rounded-full bg-amber-500/80" />
+                      <span className="h-3 w-3 rounded-full bg-warning" />
                       Pre-contrato ({counts.precontract})
                     </div>
                     <div className="flex items-center gap-2">
-                      <span className="h-3 w-3 rounded-full bg-rose-500/80" />
+                      <span className="h-3 w-3 rounded-full bg-destructive" />
                       Vendido ({counts.contract})
                     </div>
                     <div className="flex items-center gap-2">
-                      <span className="h-3 w-3 rounded-full bg-slate-400/80" />
+                      <span className="h-3 w-3 rounded-full bg-secondary-soft" />
                       Ocupante registrado ({counts.occupant})
                     </div>
                     <div className="flex items-center gap-2">
-                      <span className="h-3 w-3 rounded-full bg-violet-300/80" />
+                      <span className="h-3 w-3 rounded-full bg-accent" />
                       Familiar ({counts.familiar})
                     </div>
                   </div>
@@ -846,7 +846,7 @@ export default function JardinDetalle() {
                                 >
                                   {lote.label}
                                   {lote.isFamiliar && lote.status !== "familiar" && (
-                                    <span className="absolute top-1 right-1 rounded-full bg-violet-300/90 px-1 text-[9px] font-bold text-slate-900">
+                                    <span className="absolute top-1 right-1 rounded-full bg-accent px-1 text-[9px] font-bold text-accent-foreground">
                                       F
                                     </span>
                                   )}
@@ -859,7 +859,7 @@ export default function JardinDetalle() {
                                 >
                                   {lote.label}
                                   {lote.isFamiliar && lote.status !== "familiar" && (
-                                    <span className="absolute top-1 right-1 rounded-full bg-violet-300/90 px-1 text-[9px] font-bold text-slate-900">
+                                    <span className="absolute top-1 right-1 rounded-full bg-accent px-1 text-[9px] font-bold text-accent-foreground">
                                       F
                                     </span>
                                   )}
@@ -892,15 +892,15 @@ export default function JardinDetalle() {
                 <>
                   <div className="flex flex-wrap gap-4 mb-4 text-sm">
                     <div className="flex items-center gap-2">
-                      <span className="h-3 w-3 rounded-full bg-emerald-500/80" />
+                      <span className="h-3 w-3 rounded-full bg-success" />
                       Disponible
                     </div>
                     <div className="flex items-center gap-2">
-                      <span className="h-3 w-3 rounded-full bg-amber-500/80" />
+                      <span className="h-3 w-3 rounded-full bg-warning" />
                       Pre-contrato
                     </div>
                     <div className="flex items-center gap-2">
-                      <span className="h-3 w-3 rounded-full bg-rose-500/80" />
+                      <span className="h-3 w-3 rounded-full bg-destructive" />
                       Vendido
                     </div>
                   </div>

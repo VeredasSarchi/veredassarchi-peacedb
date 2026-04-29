@@ -15,6 +15,24 @@ import { supabase } from "@/integrations/supabase/client";
 
 type FormStep = "pre_cliente" | "pre_autorizado" | "beneficiario" | "complete";
 
+function getErrorMessage(error: unknown, fallback: string) {
+  if (error instanceof Error && error.message) {
+    return error.message;
+  }
+
+  if (typeof error === "object" && error) {
+    const maybeMessage = "message" in error ? String((error as { message?: unknown }).message ?? "") : "";
+    const maybeDetails = "details" in error ? String((error as { details?: unknown }).details ?? "") : "";
+    const maybeHint = "hint" in error ? String((error as { hint?: unknown }).hint ?? "") : "";
+    const parts = [maybeMessage, maybeDetails, maybeHint].filter(Boolean);
+    if (parts.length > 0) {
+      return parts.join(" | ");
+    }
+  }
+
+  return fallback;
+}
+
 export default function Precontratos() {
   const navigate = useNavigate();
   const { role } = useAuth();
@@ -67,19 +85,22 @@ export default function Precontratos() {
     setCurrentStep("pre_autorizado");
   };
 
-  const handleBeneficiarioComplete = async () => {
+  const handleBeneficiarioComplete = async (beneficiario: BeneficiarioDraft) => {
     if (!preClienteDraft) {
       toast.error("No se encontró la información del pre-cliente");
       return;
     }
 
-    if (!beneficiarioDraft.nombre.trim()) {
+    if (!beneficiario.nombre.trim()) {
       toast.error("El beneficiario es obligatorio");
       setCurrentStep("beneficiario");
       return;
     }
 
+    setBeneficiarioDraft(beneficiario);
     setSavingFinal(true);
+    let createdClientId: number | null = null;
+    let createdContractId: number | null = null;
     try {
       const { data: clienteInsertado, error: clienteError } = await supabase
         .from("cliente")
@@ -88,8 +109,9 @@ export default function Precontratos() {
         .single();
 
       if (clienteError || !clienteInsertado) {
-        throw clienteError ?? new Error("No se pudo crear el cliente");
+        throw new Error(getErrorMessage(clienteError, "No se pudo crear el cliente"));
       }
+      createdClientId = clienteInsertado.id_cliente;
 
       const contratoPayload = {
         ...preClienteDraft.payload.contrato,
@@ -108,11 +130,12 @@ export default function Precontratos() {
           toast.error("Ya existe un precontrato con ese número de formulario");
           return;
         }
-        throw contratoError;
+        throw new Error(getErrorMessage(contratoError, "No se pudo crear el contrato"));
       }
       if (!contratoInsertado) {
         throw new Error("No se pudo crear el contrato");
       }
+      createdContractId = contratoInsertado.id_contrato;
 
       const idContrato = contratoInsertado.id_contrato;
       const productosPayload = preClienteDraft.payload.productos.map((producto) => ({
@@ -123,7 +146,7 @@ export default function Precontratos() {
       if (productosPayload.length > 0) {
         const { error: productoError } = await supabase.from("contrato_producto").insert(productosPayload);
         if (productoError) {
-          throw productoError;
+          throw new Error(getErrorMessage(productoError, "No se pudieron crear los productos del contrato"));
         }
       }
 
@@ -138,7 +161,7 @@ export default function Precontratos() {
           }))
         );
         if (error) {
-          throw error;
+          throw new Error(getErrorMessage(error, "No se pudieron guardar los pre-autorizados"));
         }
       }
 
@@ -146,12 +169,12 @@ export default function Precontratos() {
         .from("contrato_beneficiarios")
         .insert({
           id_contrato: idContrato,
-          nombre: beneficiarioDraft.nombre,
-          cedula: beneficiarioDraft.cedula || null,
-          contacto: beneficiarioDraft.contacto || null,
+          nombre: beneficiario.nombre,
+          cedula: beneficiario.cedula || null,
+          contacto: beneficiario.contacto || null,
         });
       if (beneficiarioError) {
-        throw beneficiarioError;
+        throw new Error(getErrorMessage(beneficiarioError, "No se pudo guardar el beneficiario"));
       }
 
       setCompletedSteps((prev) => new Set(prev).add("beneficiario"));
@@ -159,7 +182,13 @@ export default function Precontratos() {
       toast.success("Precontrato registrado correctamente");
     } catch (error) {
       console.error("Error guardando precontrato final:", error);
-      toast.error("No se pudo completar el precontrato");
+      if (createdContractId) {
+        await supabase.from("contrato").delete().eq("id_contrato", createdContractId);
+      }
+      if (createdClientId) {
+        await supabase.from("cliente").delete().eq("id_cliente", createdClientId);
+      }
+      toast.error(getErrorMessage(error, "No se pudo completar el precontrato"));
     } finally {
       setSavingFinal(false);
     }
@@ -241,7 +270,7 @@ export default function Precontratos() {
 
         <Card>
           <CardHeader>
-            <CardTitle className="text-slate-900">
+            <CardTitle className="text-text-primary">
               {currentStep === "pre_cliente" && "Informacion del Pre-Cliente"}
               {currentStep === "pre_autorizado" && "Informacion del Pre-Autorizado"}
               {currentStep === "beneficiario" && "Informacion del Beneficiario"}

@@ -1,12 +1,12 @@
 export default function Unauthorized() {
   return (
-    <div className="min-h-screen flex items-center justify-center bg-slate-100">
-      <div className="bg-white shadow rounded-lg p-6 max-w-md w-full text-center">
-        <h1 className="text-2xl font-bold mb-2">Acceso no autorizado</h1>
-        <p className="text-slate-600 mb-4">
+    <div className="flex min-h-screen items-center justify-center bg-background">
+      <div className="w-full max-w-md rounded-xl border border-border bg-surface p-6 text-center shadow-sm">
+        <h1 className="mb-2 text-2xl font-bold text-text-primary">Acceso no autorizado</h1>
+        <p className="mb-4 text-text-secondary">
           No tienes permisos para acceder a esta sección del sistema.
         </p>
-        <p className="text-xs text-slate-400">
+        <p className="text-xs text-text-secondary">
           Si crees que esto es un error, contacta al administrador.
         </p>
       </div>

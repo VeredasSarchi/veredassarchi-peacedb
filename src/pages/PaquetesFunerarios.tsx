@@ -588,12 +588,7 @@ export default function PaquetesFunerarios() {
                       </div>
                     </button>
                     <div className="flex gap-2">
-                      <Button
-                        size="sm"
-                        variant="secondary"
-                        className="text-white"
-                        onClick={() => openEdit(paquete)}
-                      >
+                      <Button size="sm" variant="secondary" onClick={() => openEdit(paquete)}>
                         <Pencil className="h-4 w-4" />
                         Editar
                       </Button>

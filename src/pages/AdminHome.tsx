@@ -19,6 +19,7 @@ import {
   Package,
   Flame,
   Trees,
+  Link,
 } from "lucide-react";
 
 const AdminHome = () => {
@@ -31,7 +32,7 @@ const AdminHome = () => {
           <h1 className="text-4xl font-bold text-primary mb-2">
             Veredas Sarchi-Poás
           </h1>
-          <p className="text-xl text-secondary-foreground/80">
+          <p className="text-xl text-text-secondary">
             Sistema de Gestion Integral
           </p>
         </div>
@@ -75,6 +76,14 @@ const AdminHome = () => {
               icon: Folder,
               actionLabel: "Acceder",
               disabled: true,
+            },
+            {
+              title: "Conexion OneDrive",
+              description: "Reconecta la cuenta de Microsoft y valida el estado actual de la integracion.",
+              icon: Link,
+              action: () => navigate("/onedrive-admin"),
+              actionLabel: "Acceder",
+              disabled: false,
             },
             {
               title: "Ingresos Campo Santo",
@@ -124,7 +133,7 @@ const AdminHome = () => {
           ].map((item) => (
             <Card
               key={item.title}
-              className={`relative flex h-full flex-col overflow-hidden rounded-xl border border-primary/10 bg-gradient-to-br from-white/5 to-primary/5 shadow-md transition-all duration-200 before:absolute before:inset-x-0 before:top-0 before:h-1 before:bg-primary/60 before:opacity-70 hover:-translate-y-1 hover:shadow-xl ${item.action ? "cursor-pointer" : ""}`}
+              className={`relative flex h-full flex-col overflow-hidden rounded-xl border border-border bg-surface shadow-sm transition-all duration-200 before:absolute before:inset-x-0 before:top-0 before:h-1 before:bg-primary/70 hover:-translate-y-1 hover:shadow-md ${item.action ? "cursor-pointer" : ""}`}
               onClick={item.action}
             >
               <CardHeader>

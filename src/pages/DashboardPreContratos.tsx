@@ -41,6 +41,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { PreClienteForm, type PreClienteFormValues, type PreClienteSubmitPayload } from "@/components/precontratos/PreClienteForm";
 import type { ProductType } from "@/components/precontratos/PreClienteForm";
+import { buildOneDriveFolderPayload } from "@/lib/contract-onedrive";
 
 type ContratoRow = Tables<"contrato"> & { numero_formulario: string | null };
 type ClienteRow = Tables<"cliente">;
@@ -72,6 +73,33 @@ type PreContratoDetalle = {
   autorizados: AutorizadoRow[];
   beneficiarios: BeneficiarioRow[];
 };
+
+type OneDriveFolderResult = {
+  ok: boolean;
+  status: "created";
+  folderId: string;
+  folderName: string;
+  webUrl: string | null;
+  subfolders: string[];
+};
+
+async function getFunctionErrorMessage(error: unknown, fallback: string): Promise<string> {
+  const response =
+    typeof error === "object" && error && "context" in error
+      ? (error as { context?: Response }).context
+      : undefined;
+
+  if (!response) {
+    return fallback;
+  }
+
+  try {
+    const body = (await response.clone().json()) as { error?: string };
+    return body.error || fallback;
+  } catch {
+    return fallback;
+  }
+}
 
 function asSingle<T>(value: T | T[] | null | undefined): T | null {
   if (Array.isArray(value)) {
@@ -636,6 +664,34 @@ export default function DashboardPreContratos() {
 
     setProcessingId(idContrato);
     try {
+      const { clientName, categoryName, categoryType, folderName } = buildOneDriveFolderPayload(formalizeTarget);
+
+      // Primero se asegura la estructura en OneDrive; si esta parte falla, el contrato no se formaliza.
+      const { data, error: oneDriveError } = await supabase.functions.invoke<OneDriveFolderResult>(
+        "onedrive-create-client-folder",
+        {
+          body: {
+            clientName,
+            categoryName,
+            categoryType,
+            folderName,
+          },
+        }
+      );
+
+      if (oneDriveError) {
+        console.error("Error creando carpeta de cliente en OneDrive:", oneDriveError);
+        const detailedMessage = await getFunctionErrorMessage(
+          oneDriveError,
+          "No se pudo crear la estructura del cliente en OneDrive"
+        );
+        throw new Error(detailedMessage);
+      }
+
+      if (!data?.ok || !data.folderId) {
+        throw new Error("OneDrive no devolvio una respuesta valida para la carpeta del cliente");
+      }
+
       const { error } = await supabase
         .from("contrato")
         .update({ estado_contrato: "CONTRATO" })
@@ -643,12 +699,12 @@ export default function DashboardPreContratos() {
 
       if (error) throw error;
 
-      toast.success("Precontrato formalizado. Estado actualizado a CONTRATO.");
+      toast.success(`Precontrato formalizado y carpeta creada en ${categoryName}.`);
       setFormalizeTarget(null);
       await loadPrecontratos();
     } catch (error) {
       console.error("Error formalizando precontrato:", error);
-      toast.error("No se pudo formalizar el precontrato");
+      toast.error(error instanceof Error ? error.message : "No se pudo formalizar el precontrato");
     } finally {
       setProcessingId(null);
     }
@@ -668,7 +724,7 @@ export default function DashboardPreContratos() {
                 : "Carpeta por persona para consulta general de precontratos (solo lectura)."}
             </p>
             {!supportsNumeroFormulario && (
-              <p className="text-xs text-amber-300 mt-1">
+              <p className="mt-1 text-xs text-warning">
                 Modo compatibilidad activo: aplica la migración de número_formulario para mostrar
                 ese dato en todos los registros.
               </p>
@@ -778,7 +834,6 @@ export default function DashboardPreContratos() {
                                   <Button
                                     size="sm"
                                     variant="secondary"
-                                    className="text-white"
                                     onClick={() => openEdit(item)}
                                     disabled={processing}
                                   >

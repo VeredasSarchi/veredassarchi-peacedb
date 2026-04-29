@@ -30,7 +30,7 @@ type BeneficiarioFormValues = z.infer<typeof beneficiarioSchema>;
 interface BeneficiarioFormProps {
   initialValues?: BeneficiarioDraft;
   onSave: (values: BeneficiarioDraft) => void;
-  onComplete: () => void;
+  onComplete: (values: BeneficiarioDraft) => void;
   onBack: (values: BeneficiarioDraft) => void;
   disabled?: boolean;
 }
@@ -62,12 +62,14 @@ export function BeneficiarioForm({
   }, [initialValues, form]);
 
   const onSubmit = (values: BeneficiarioFormValues) => {
-    onSave({
+    const draft = {
       nombre: values.nombre,
       cedula: values.cedula || "",
       contacto: values.contacto || "",
-    });
-    onComplete();
+    };
+
+    onSave(draft);
+    onComplete(draft);
   };
 
   const handleGoBack = () => {

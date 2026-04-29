@@ -11,4 +11,5 @@ BEGIN
   ) THEN
     ALTER TYPE public.estado_contrato_enum ADD VALUE 'CONTRATO';
   END IF;
-END $$;
+END;
+$$;

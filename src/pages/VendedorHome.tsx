@@ -19,7 +19,7 @@ const VendedorHome = () => {
           <h1 className="text-3xl font-bold text-primary mb-2">
             Panel de Vendedor
           </h1>
-          <p className="text-lg text-secondary-foreground/80">
+          <p className="text-lg text-text-secondary">
             Accesos rapidos para tu gestion diaria
           </p>
         </div>
