@@ -85,7 +85,6 @@ type ClienteFolder = {
 
 const DOCUMENT_FOLDERS = ["COMPROBANTES", "FACTURAS"] as const;
 const FORMALIZED_STATES: ReadonlyArray<Tables<"contrato">["estado_contrato"]> = [
-  "CONTRATO",
   "VIGENTE",
 ];
 

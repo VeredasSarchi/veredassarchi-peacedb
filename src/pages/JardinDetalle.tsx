@@ -48,6 +48,10 @@ type LoteEspacio = {
 type LoteStatus = "available" | "precontract" | "contract" | "occupant" | "familiar";
 type CenizarioStatus = "available" | "precontract" | "contract";
 
+function isFormalizedContractState(estado: string | null | undefined): boolean {
+  return estado === "VIGENTE";
+}
+
 type LoteDisplay = {
   key: string;
   label: string;
@@ -221,9 +225,9 @@ export default function JardinDetalle() {
       }
 
       let espaciosData: LoteEspacio[] = [];
-      let contractMap: Record<number, "contract" | "precontract"> = {};
+      const contractMap: Record<number, "contract" | "precontract"> = {};
       let cenizariosData: TipoCenizario[] = [];
-      let cenizarioContractMap: Record<number, "contract" | "precontract"> = {};
+      const cenizarioContractMap: Record<number, "contract" | "precontract"> = {};
       if (lotesData && lotesData.length > 0) {
         const loteIds = lotesData.map((lote) => lote.id_lote);
 
@@ -253,7 +257,9 @@ export default function JardinDetalle() {
             }
             return;
           }
-          contractMap[idLote] = "contract";
+          if (isFormalizedContractState(contrato.estado_contrato)) {
+            contractMap[idLote] = "contract";
+          }
         });
 
         const { data: espacios, error: espaciosError } = await supabase
@@ -317,7 +323,9 @@ export default function JardinDetalle() {
             }
             return;
           }
-          cenizarioContractMap[idTipo] = "contract";
+          if (isFormalizedContractState(contrato.estado_contrato)) {
+            cenizarioContractMap[idTipo] = "contract";
+          }
         });
       }
 

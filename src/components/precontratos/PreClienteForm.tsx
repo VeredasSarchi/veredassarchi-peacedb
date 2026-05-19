@@ -48,8 +48,8 @@ const preClienteSchema = z.object({
     .max(120, "El correo no puede superar 120 caracteres")
     .optional()
     .or(z.literal("")),
-  telefono1: z.string().optional(),
-  telefono2: z.string().optional(),
+  telefono1: z.string().min(1, "El teléfono 1 es requerido"),
+  telefono2: z.string().min(1, "El teléfono 2 es requerido"),
   id_jardin: z.string().optional(),
   tipos_paquete_funerario: z
     .array(z.enum(["LOTE", "CENIZARIO", "CREMACION", "PAQUETE_FUNERARIO"]))
@@ -164,6 +164,10 @@ function formatProductType(type: ProductType): string {
   if (type === "CENIZARIO") return "Cenizario";
   if (type === "PAQUETE_FUNERARIO") return "Paquete funerario";
   return "Cremación";
+}
+
+function isFormalizedContractState(estado: string | null | undefined): boolean {
+  return estado === "VIGENTE";
 }
 
 function parseNumber(value?: string): number | null {
@@ -297,7 +301,7 @@ export function PreClienteForm({
   const selectedCenizarioIds = form.watch("cenizario_numeros");
   const enabledProductTypes = form.watch("tipos_paquete_funerario");
   const montoTotalInput = form.watch("precio");
-  const plazoAniosInput = form.watch("plazo_anios");
+  const plazoMesesInput = form.watch("plazo_anios");
   const primaInput = form.watch("prima");
   const tasaAnualInput = form.watch("tasa_interes_anual");
   const mantenimientoAnualInput = form.watch("monto_mantenimiento_anual");
@@ -359,12 +363,12 @@ export function PreClienteForm({
 
   useEffect(() => {
     const montoTotal = parseNumber(montoTotalInput);
-    const plazoAnios = parseNumber(plazoAniosInput);
+    const plazoMeses = parseNumber(plazoMesesInput);
     const prima = parseNumber(primaInput) ?? 0;
     const tasaAnual = parseNumber(tasaAnualInput) ?? 0;
 
     const mesesCalculados =
-      plazoAnios && plazoAnios > 0 ? Math.max(0, Math.round(plazoAnios * 12)) : null;
+      plazoMeses && plazoMeses > 0 ? Math.max(0, Math.round(plazoMeses)) : null;
     const totalMesesStr = mesesCalculados ? String(mesesCalculados) : "";
     if (form.getValues("total_meses") !== totalMesesStr) {
       form.setValue("total_meses", totalMesesStr, { shouldDirty: false });
@@ -421,7 +425,7 @@ export function PreClienteForm({
         shouldDirty: false,
       });
     }
-  }, [montoTotalInput, plazoAniosInput, primaInput, tasaAnualInput, mantenimientoAnualInput, form]);
+  }, [montoTotalInput, plazoMesesInput, primaInput, tasaAnualInput, mantenimientoAnualInput, form]);
 
   const lotesDelJardin = useMemo(
     () => lotes.filter((lote) => String(lote.id_jardin) === selectedJardin),
@@ -689,7 +693,9 @@ export function PreClienteForm({
             }
             return;
           }
-          lotMap[idLote] = "contract";
+          if (isFormalizedContractState(contrato.estado_contrato)) {
+            lotMap[idLote] = "contract";
+          }
         });
 
         const cenizarioMap: Record<number, "contract" | "precontract"> = {};
@@ -708,7 +714,9 @@ export function PreClienteForm({
             }
             return;
           }
-          cenizarioMap[idCenizario] = "contract";
+          if (isFormalizedContractState(contrato.estado_contrato)) {
+            cenizarioMap[idCenizario] = "contract";
+          }
         });
 
         setContractStatusByLot(lotMap);
@@ -886,16 +894,20 @@ export function PreClienteForm({
 
       const numeroContrato = numeroContratoIngresado || `PRE-${String(Date.now()).slice(-8)}`;
 
+      const totalMeses = parseNumber(values.total_meses);
+      const plazoAniosCompat =
+        totalMeses !== null && totalMeses % 12 === 0 ? totalMeses / 12 : null;
+
       const contratoPayload: PreClienteContratoDraft = {
         numero_contrato: numeroContrato,
         numero_formulario: numeroFormulario,
         fecha_firma: values.fecha || null,
         id_vendedor: idVendedor,
         monto_arrendamiento_total: parseNumber(values.precio),
-        plazo_anios: parseNumber(values.plazo_anios),
+        plazo_anios: plazoAniosCompat,
         cuota_mensual: parseNumber(values.cuota_fija),
         dia_pago_mensual: parseNumber(values.dia_pago),
-        total_meses: parseNumber(values.total_meses),
+        total_meses: totalMeses,
         tasa_interes_anual: parseNumber(values.tasa_interes_anual),
         monto_entregado_inicial: parseNumber(values.prima),
         saldo_pendiente: parseNumber(values.saldo),
@@ -1092,7 +1104,7 @@ export function PreClienteForm({
             name="telefono1"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Teléfono 1</FormLabel>
+                <FormLabel>Teléfono 1 *</FormLabel>
                 <FormControl>
                   <Input placeholder="Número de teléfono" {...field} />
                 </FormControl>
@@ -1106,7 +1118,7 @@ export function PreClienteForm({
             name="telefono2"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Teléfono 2</FormLabel>
+                <FormLabel>Teléfono 2 *</FormLabel>
                 <FormControl>
                   <Input placeholder="Número de teléfono alternativo" {...field} />
                 </FormControl>
@@ -1668,9 +1680,9 @@ export function PreClienteForm({
               name="plazo_anios"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Plazo (años)</FormLabel>
+                  <FormLabel>Plazo (meses)</FormLabel>
                   <FormControl>
-                    <Input type="number" placeholder="Ej: 99" {...field} />
+                    <Input type="number" min="1" step="1" placeholder="Ej: 6" {...field} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>

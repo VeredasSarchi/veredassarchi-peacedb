@@ -306,6 +306,28 @@ export async function createFolderByItemId(accessToken: string, parentItemId: st
   return (await response.json()) as DriveItem;
 }
 
+export async function renameDriveItem(accessToken: string, itemId: string, newName: string) {
+  const response = await fetch(
+    `https://graph.microsoft.com/v1.0/me/drive/items/${encodeURIComponent(itemId)}`,
+    {
+      method: "PATCH",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        name: newName,
+      }),
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(await parseGraphError(response));
+  }
+
+  return (await response.json()) as DriveItem;
+}
+
 export async function uploadFileToFolder(
   accessToken: string,
   parentItemId: string,

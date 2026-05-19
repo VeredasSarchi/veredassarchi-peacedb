@@ -1,15 +1,3 @@
-﻿DO $$
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1
-    FROM pg_type t
-    JOIN pg_namespace n ON n.oid = t.typnamespace
-    JOIN pg_enum e ON e.enumtypid = t.oid
-    WHERE n.nspname = 'public'
-      AND t.typname = 'estado_contrato_enum'
-      AND e.enumlabel = 'CONTRATO'
-  ) THEN
-    ALTER TYPE public.estado_contrato_enum ADD VALUE 'CONTRATO';
-  END IF;
-END;
-$$;
+-- No-op: VIGENTE is the canonical status for formalized contracts.
+-- This migration used to add a CONTRATO enum value, but the application now
+-- keeps the original estado_contrato_enum values from veredas_sarchi_bd_v1.sql.

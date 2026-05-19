@@ -10,6 +10,7 @@ import AdminHome from "@/pages/AdminHome";
 import VendedorHome from "@/pages/VendedorHome";
 import DashboardPreContratos from "@/pages/DashboardPreContratos";
 import DashboardContratosActivos from "@/pages/DashboardContratosActivos";
+import DashboardContratosAnulados from "@/pages/DashboardContratosAnulados";
 import PaquetesFunerarios from "@/pages/PaquetesFunerarios";
 import Cremaciones from "@/pages/Cremaciones";
 import Jardines from "@/pages/Jardines";
@@ -82,6 +83,15 @@ function AppLayout() {
             element={
               <ProtectedRoute allowedRoles={["admin", "vendedor"]}>
                 <DashboardContratosActivos />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/dashboard-contratos-anulados"
+            element={
+              <ProtectedRoute allowedRoles={["admin", "vendedor"]}>
+                <DashboardContratosAnulados />
               </ProtectedRoute>
             }
           />

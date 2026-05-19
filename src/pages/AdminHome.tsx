@@ -67,8 +67,9 @@ const AdminHome = () => {
               title: "Contratos Anulados",
               description: "Revisa anulaciones, motivos y trazabilidad.",
               icon: FileX2,
+              action: () => navigate("/dashboard-contratos-anulados"),
               actionLabel: "Acceder",
-              disabled: true,
+              disabled: false,
             },
             {
               title: "Docs Adjuntos (One Drive)",

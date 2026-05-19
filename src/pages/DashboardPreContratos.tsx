@@ -1,20 +1,39 @@
 ﻿import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import type { ComponentType, ReactNode } from "react";
 import { toast } from "sonner";
 import {
+  Calendar,
   CheckCircle2,
+  Cloud,
+  DollarSign,
   FileCheck2,
+  FileText,
   FolderClosed,
+  Info,
+  Mail,
+  MapPin,
   Trash2,
   Pencil,
+  Phone,
   RefreshCw,
   Search,
+  User,
+  Users,
 } from "lucide-react";
 import { useAuth } from "@/auth/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import type { Tables } from "@/integrations/supabase/types";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import {
   Accordion,
   AccordionContent,
@@ -42,6 +61,7 @@ import { Input } from "@/components/ui/input";
 import { PreClienteForm, type PreClienteFormValues, type PreClienteSubmitPayload } from "@/components/precontratos/PreClienteForm";
 import type { ProductType } from "@/components/precontratos/PreClienteForm";
 import { buildOneDriveFolderPayload } from "@/lib/contract-onedrive";
+import { cn } from "@/lib/utils";
 
 type ContratoRow = Tables<"contrato"> & { numero_formulario: string | null };
 type ClienteRow = Tables<"cliente">;
@@ -169,6 +189,150 @@ function getProductoLabel(producto: ProductoDetalle): string {
   return "Paquete funerario";
 }
 
+function formatDate(value: string | null): string {
+  if (!value) return "Sin fecha";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return parsed.toLocaleString("es-CR");
+}
+
+function displayValue(value: string | number | null | undefined, fallback = "No definido"): string {
+  if (value === null || value === undefined) return fallback;
+  const text = String(value).trim();
+  return text.length > 0 ? text : fallback;
+}
+
+function getCategoryLabel(expected: ReturnType<typeof buildOneDriveFolderPayload> | null) {
+  if (!expected) return "Sin ruta";
+  if (expected.categoryType === "funeral_package") {
+    return `PAQUETES FUNERARIOS / ${expected.categoryName}`;
+  }
+  if (expected.categoryType === "cremation") {
+    return `CREMACIONES / ${expected.categoryName}`;
+  }
+  return expected.categoryName;
+}
+
+function PrecontractStatusBadge() {
+  return (
+    <Badge className="rounded-full bg-warning px-3 py-1 text-xs text-warning-foreground shadow-sm hover:bg-warning">
+      Pendiente
+    </Badge>
+  );
+}
+
+function OneDrivePendingBadge() {
+  return (
+    <Badge className="rounded-full bg-secondary-soft px-3 py-1 text-xs text-text-primary shadow-sm hover:bg-secondary-soft">
+      <Cloud className="mr-1 h-3 w-3" />
+      Por crear
+    </Badge>
+  );
+}
+
+function SectionPanel({
+  icon: Icon,
+  title,
+  description,
+  children,
+  className,
+}: {
+  icon: ComponentType<{ className?: string }>;
+  title: string;
+  description?: string;
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <section
+      className={cn(
+        "rounded-lg border border-border/70 bg-surface p-4 shadow-sm transition-all duration-200 hover:border-primary/30 hover:shadow-md",
+        className,
+      )}
+    >
+      <div className="mb-4 flex items-start gap-3">
+        <div className="rounded-md bg-primary-soft p-2 text-primary">
+          <Icon className="h-4 w-4" />
+        </div>
+        <div>
+          <h3 className="text-sm font-semibold text-text-primary">{title}</h3>
+          {description && <p className="mt-0.5 line-clamp-2 text-xs text-text-secondary">{description}</p>}
+        </div>
+      </div>
+      {children}
+    </section>
+  );
+}
+
+function InfoLine({
+  icon: Icon,
+  label,
+  value,
+  tooltip,
+}: {
+  icon?: ComponentType<{ className?: string }>;
+  label: string;
+  value: ReactNode;
+  tooltip?: string;
+}) {
+  const labelContent = (
+    <span className="inline-flex items-center gap-1">
+      {label}
+      {tooltip && <Info className="h-3 w-3 text-text-secondary" />}
+    </span>
+  );
+
+  return (
+    <div className="min-w-0 rounded-md bg-muted/30 px-3 py-2">
+      <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-text-secondary">
+        {Icon && <Icon className="h-3.5 w-3.5" />}
+        {tooltip ? (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className="cursor-help">{labelContent}</span>
+            </TooltipTrigger>
+            <TooltipContent className="max-w-xs">{tooltip}</TooltipContent>
+          </Tooltip>
+        ) : (
+          labelContent
+        )}
+      </div>
+      <div className="mt-1 break-words text-sm font-medium text-text-primary">{value}</div>
+    </div>
+  );
+}
+
+function EmptyState({ message }: { message: string }) {
+  return (
+    <div className="rounded-lg border border-dashed border-border bg-muted/30 px-4 py-5 text-center text-sm text-text-secondary">
+      {message}
+    </div>
+  );
+}
+
+function PrecontractLoadingSkeleton() {
+  return (
+    <div className="space-y-4">
+      {[0, 1].map((item) => (
+        <div key={item} className="rounded-lg border border-border bg-surface p-5 shadow-sm">
+          <div className="mb-5 flex flex-wrap items-start justify-between gap-4">
+            <div className="space-y-2">
+              <Skeleton className="h-7 w-48" />
+              <Skeleton className="h-4 w-72" />
+            </div>
+            <Skeleton className="h-9 w-40" />
+          </div>
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+            <Skeleton className="h-24" />
+            <Skeleton className="h-24" />
+            <Skeleton className="h-24" />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default function DashboardPreContratos() {
   const navigate = useNavigate();
   const { role } = useAuth();
@@ -229,6 +393,11 @@ export default function DashboardPreContratos() {
 
     const firstJardinFromLote =
       lotes[0]?.lote?.id_jardin ?? cenizarios[0]?.tipo_cenizario?.id_jardin ?? "";
+    const plazoMeses =
+      record.contrato.total_meses ??
+      (record.contrato.plazo_anios !== null && record.contrato.plazo_anios !== undefined
+        ? record.contrato.plazo_anios * 12
+        : null);
 
     return {
       numero_formulario: record.contrato.numero_formulario || "",
@@ -250,8 +419,8 @@ export default function DashboardPreContratos() {
       id_paquete_funerario: paquetes[0]?.id_paquete ? String(paquetes[0].id_paquete) : "",
       tipo_cremacion: cremaciones[0]?.id_tipo_cremacion ? String(cremaciones[0].id_tipo_cremacion) : "",
       precio: toPreClienteNumber(record.contrato.monto_arrendamiento_total),
-      plazo_anios: toPreClienteNumber(record.contrato.plazo_anios),
-      total_meses: toPreClienteNumber(record.contrato.total_meses),
+      plazo_anios: toPreClienteNumber(plazoMeses),
+      total_meses: toPreClienteNumber(plazoMeses),
       cuota_fija: toPreClienteNumber(record.contrato.cuota_mensual),
       dia_pago: toPreClienteNumber(record.contrato.dia_pago_mensual),
       tasa_interes_anual: toPreClienteNumber(record.contrato.tasa_interes_anual),
@@ -694,7 +863,7 @@ export default function DashboardPreContratos() {
 
       const { error } = await supabase
         .from("contrato")
-        .update({ estado_contrato: "CONTRATO" })
+        .update({ estado_contrato: "VIGENTE" })
         .eq("id_contrato", idContrato);
 
       if (error) throw error;
@@ -711,6 +880,7 @@ export default function DashboardPreContratos() {
   };
 
   return (
+    <TooltipProvider delayDuration={180}>
     <div className="min-h-screen bg-background p-4 md:p-8">
       <div className="mx-auto w-full px-2 sm:px-4 lg:px-8">
         <div className="mb-8 flex flex-wrap items-start justify-between gap-3">
@@ -756,16 +926,10 @@ export default function DashboardPreContratos() {
           </p>
         </div>
 
-        {loading && (
-          <Card>
-            <CardContent className="py-8 text-center text-muted-foreground">
-              Cargando precontratos...
-            </CardContent>
-          </Card>
-        )}
+        {loading && <PrecontractLoadingSkeleton />}
 
         {!loading && agrupadosPorCliente.length === 0 && (
-          <Card>
+          <Card className="rounded-lg border-border/70 shadow-sm">
             <CardHeader>
               <CardTitle>No hay precontratos pendientes</CardTitle>
               <CardDescription>
@@ -776,7 +940,7 @@ export default function DashboardPreContratos() {
         )}
 
         {!loading && agrupadosPorCliente.length > 0 && agrupadosFiltrados.length === 0 && (
-          <Card>
+          <Card className="rounded-lg border-border/70 shadow-sm">
             <CardHeader>
               <CardTitle>No se encontraron resultados</CardTitle>
               <CardDescription>
@@ -816,18 +980,63 @@ export default function DashboardPreContratos() {
                   <div className="space-y-4 pt-2">
                     {grupo.items.map((item) => {
                       const processing = processingId === item.contrato.id_contrato;
+                      const expected = (() => {
+                        try {
+                          return buildOneDriveFolderPayload(item);
+                        } catch {
+                          return null;
+                        }
+                      })();
+                      const precontractTitle =
+                        item.contrato.numero_formulario ||
+                        item.contrato.numero_contrato ||
+                        `Precontrato ${item.contrato.id_contrato}`;
+                      const plazoContrato =
+                        item.contrato.total_meses !== null && item.contrato.total_meses !== undefined
+                          ? `${item.contrato.total_meses} meses`
+                          : item.contrato.plazo_anios !== null && item.contrato.plazo_anios !== undefined
+                            ? `${item.contrato.plazo_anios * 12} meses`
+                            : "No definido";
+                      const diaPago =
+                        item.contrato.dia_pago_mensual !== null && item.contrato.dia_pago_mensual !== undefined
+                          ? String(item.contrato.dia_pago_mensual)
+                          : "No definido";
+                      const tasaInteres =
+                        item.contrato.tasa_interes_anual !== null && item.contrato.tasa_interes_anual !== undefined
+                          ? `${item.contrato.tasa_interes_anual}%`
+                          : "No definido";
+                      const cantidadLotes =
+                        item.contrato.cantidad_lotes !== null && item.contrato.cantidad_lotes !== undefined
+                          ? String(item.contrato.cantidad_lotes)
+                          : "No definido";
+                      const anioMantenimiento =
+                        item.contrato.anio_inicio_mantenimiento !== null &&
+                        item.contrato.anio_inicio_mantenimiento !== undefined
+                          ? String(item.contrato.anio_inicio_mantenimiento)
+                          : "No definido";
+
                       return (
-                        <Card key={item.contrato.id_contrato} className="border border-border/70">
-                          <CardHeader className="pb-3">
-                            <div className="flex flex-wrap items-start justify-between gap-3">
-                              <div>
-                                <CardTitle className="text-base">
-                                  {item.contrato.numero_formulario || "Sin número de formulario"}
-                                </CardTitle>
-                                <CardDescription>
-                                  Estado: {item.contrato.estado_contrato} - Fecha:{" "}
-                                  {item.contrato.fecha_firma || "Sin fecha"}
-                                </CardDescription>
+                        <article
+                          key={item.contrato.id_contrato}
+                          className="overflow-hidden rounded-lg border border-border/70 bg-card shadow-sm transition-all duration-200 hover:shadow-md"
+                        >
+                          <div className="border-b border-border/70 bg-surface p-5">
+                            <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+                              <div className="flex min-w-0 gap-4">
+                                <div className="mt-1 rounded-lg bg-warning/30 p-3 text-warning-foreground">
+                                  <FileText className="h-6 w-6" />
+                                </div>
+                                <div className="min-w-0">
+                                  <div className="mb-2 flex flex-wrap items-center gap-2">
+                                    <PrecontractStatusBadge />
+                                    <OneDrivePendingBadge />
+                                  </div>
+                                  <h2 className="break-words text-2xl font-bold text-text-primary">{precontractTitle}</h2>
+                                  <p className="mt-1 line-clamp-2 text-sm text-text-secondary">
+                                    {displayValue(item.cliente?.nombre_completo, "Cliente no registrado")} - Firma:{" "}
+                                    {formatDate(item.contrato.fecha_firma)}
+                                  </p>
+                                </div>
                               </div>
                               {isAdmin ? (
                                 <div className="flex flex-wrap gap-2">
@@ -864,161 +1073,178 @@ export default function DashboardPreContratos() {
                                 </span>
                               )}
                             </div>
-                          </CardHeader>
-                          <CardContent className="space-y-3">
-                            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                              <div className="rounded-md border border-border/70 p-3">
-                                <p className="text-xs font-semibold text-muted-foreground mb-1">
-                                  Cliente
-                                </p>
-                                <p className="text-sm text-card-foreground">
-                                  {item.cliente?.nombre_completo || "Sin nombre"}
-                                </p>
-                                <p className="text-xs text-muted-foreground">
-                                  Cedula: {item.cliente?.cedula || "No registrada"}
-                                </p>
-                                <p className="text-xs text-muted-foreground">
-                                  Estado civil: {item.cliente?.estado_civil || "No registrado"}
-                                </p>
-                                <p className="text-xs text-muted-foreground">
-                                  Profesion: {item.cliente?.profesion || "No registrada"}
-                                </p>
-                                <p className="text-xs text-muted-foreground">
-                                  Correo: {item.cliente?.email || "No registrado"}
-                                </p>
-                                <p className="text-xs text-muted-foreground">
-                                  Teléfono 1: {item.cliente?.telefono1 || "No registrado"}
-                                </p>
-                                <p className="text-xs text-muted-foreground">
-                                  Teléfono 2: {item.cliente?.telefono2 || "No registrado"}
-                                </p>
-                                <p className="text-xs text-muted-foreground">
-                                  Dirección: {item.cliente?.direccion || "No registrada"}
-                                </p>
-                              </div>
-                              <div className="rounded-md border border-border/70 p-3">
-                                <p className="text-xs font-semibold text-muted-foreground mb-2">
-                                  Resumen financiero (solo vista)
-                                </p>
-                                <div className="grid grid-cols-1 gap-1 text-xs text-card-foreground">
-                                  <p>
-                                    Monto total:{" "}
-                                    <span className="font-medium">
-                                      {formatCurrency(item.contrato.monto_arrendamiento_total)}
-                                    </span>
-                                  </p>
-                                  <p>Plazo (años): {item.contrato.plazo_anios ?? "No definido"}</p>
-                                  <p>
-                                    Cuota mensual: {formatCurrency(item.contrato.cuota_mensual)}
-                                  </p>
-                                  <p>
-                                    Dia pago mensual:{" "}
-                                    {item.contrato.dia_pago_mensual ?? "No definido"}
-                                  </p>
-                                  <p>Total meses: {item.contrato.total_meses ?? "No definido"}</p>
-                                  <p>
-                                    Tasa interes anual:{" "}
-                                    {item.contrato.tasa_interes_anual ?? "No definido"}
-                                  </p>
-                                  <p>
-                                    Prima:{" "}
-                                    {formatCurrency(item.contrato.monto_entregado_inicial)}
-                                  </p>
-                                  <p>
-                                    Saldo pendiente:{" "}
-                                    {formatCurrency(item.contrato.saldo_pendiente)}
-                                  </p>
-                                  <p>
-                                    Cantidad lotes: {item.contrato.cantidad_lotes ?? "No definido"}
-                                  </p>
-                                  <p>
-                                    Mantenimiento anual:{" "}
-                                    {formatCurrency(item.contrato.monto_mantenimiento_anual)}
-                                  </p>
-                                  <p>
-                                    Año inicio mantenimiento:{" "}
-                                    {item.contrato.anio_inicio_mantenimiento ?? "No definido"}
-                                  </p>
-                                  <p>
-                                    Monto apertura: {formatCurrency(item.contrato.monto_apertura)}
-                                  </p>
-                                  <p>
-                                    Observaciones:{" "}
-                                    {item.contrato.observaciones_contrato || "Sin observaciones"}
-                                  </p>
-                                  <p>
-                                    Vendedor: {item.vendedor?.nombre_completo || "No asignado"}
-                                  </p>
+                          </div>
+
+                          <div className="space-y-4 p-5">
+                            <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+                              <SectionPanel
+                                icon={User}
+                                title="Cliente"
+                                description="Datos principales del titular antes de formalizar."
+                              >
+                                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                                  <InfoLine label="Nombre" value={displayValue(item.cliente?.nombre_completo, "Sin nombre")} />
+                                  <InfoLine label="Cedula" value={displayValue(item.cliente?.cedula, "No registrada")} />
+                                  <InfoLine label="Estado civil" value={displayValue(item.cliente?.estado_civil, "No registrado")} />
+                                  <InfoLine label="Profesion" value={displayValue(item.cliente?.profesion, "No registrada")} />
+                                  <InfoLine icon={Mail} label="Correo" value={displayValue(item.cliente?.email, "No registrado")} />
+                                  <InfoLine icon={Phone} label="Telefono 1" value={displayValue(item.cliente?.telefono1, "No registrado")} />
+                                  <InfoLine icon={Phone} label="Telefono 2" value={displayValue(item.cliente?.telefono2, "No registrado")} />
+                                  <InfoLine icon={MapPin} label="Direccion" value={displayValue(item.cliente?.direccion, "No registrada")} />
                                 </div>
-                              </div>
+                              </SectionPanel>
+
+                              <SectionPanel
+                                icon={FileText}
+                                title="Precontrato"
+                                description="Condiciones operativas que se convertirán en contrato vigente."
+                              >
+                                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                                  <InfoLine icon={Calendar} label="Fecha de firma" value={formatDate(item.contrato.fecha_firma)} />
+                                  <InfoLine label="Plazo" value={plazoContrato} />
+                                  <InfoLine label="Dia de pago" value={diaPago} />
+                                  <InfoLine
+                                    label="Tasa interes"
+                                    value={tasaInteres}
+                                    tooltip="Tasa anual registrada para el calculo financiero."
+                                  />
+                                  <InfoLine label="Cantidad lotes" value={cantidadLotes} />
+                                  <InfoLine label="Inicio mantenimiento" value={anioMantenimiento} />
+                                  <InfoLine label="Vendedor" value={displayValue(item.vendedor?.nombre_completo, "No asignado")} />
+                                  <InfoLine
+                                    label="ID interno"
+                                    value={item.contrato.id_contrato}
+                                    tooltip="Identificador tecnico del precontrato en base de datos."
+                                  />
+                                  <div className="sm:col-span-2">
+                                    <InfoLine
+                                      label="Observaciones"
+                                      value={displayValue(item.contrato.observaciones_contrato, "Sin observaciones")}
+                                    />
+                                  </div>
+                                </div>
+                              </SectionPanel>
                             </div>
 
-                            <div>
-                              <p className="text-xs font-semibold text-muted-foreground mb-2">
-                                Productos del contrato
-                              </p>
+                            <SectionPanel
+                              icon={DollarSign}
+                              title="Informacion financiera"
+                              description="Montos complementarios para validar antes de formalizar."
+                            >
+                              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                                <InfoLine label="Prima" value={formatCurrency(item.contrato.monto_entregado_inicial)} />
+                                <InfoLine label="Mantenimiento anual" value={formatCurrency(item.contrato.monto_mantenimiento_anual)} />
+                                <InfoLine label="Monto apertura" value={formatCurrency(item.contrato.monto_apertura)} />
+                                <InfoLine label="Saldo pendiente" value={formatCurrency(item.contrato.saldo_pendiente)} />
+                              </div>
+                            </SectionPanel>
+
+                            <SectionPanel
+                              icon={Cloud}
+                              title="OneDrive"
+                              description="Carpeta que se creará al formalizar el precontrato."
+                              className="bg-primary-soft/30"
+                            >
+                              {expected ? (
+                                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                                  <InfoLine
+                                    label="Categoria"
+                                    value={getCategoryLabel(expected)}
+                                    tooltip="Ruta esperada segun el producto principal del precontrato."
+                                  />
+                                  <InfoLine
+                                    label="Carpeta contrato"
+                                    value={expected.folderName}
+                                    tooltip="Nombre exacto que se usara al crear la carpeta en OneDrive."
+                                  />
+                                </div>
+                              ) : (
+                                <EmptyState message="No se pudo calcular la ruta esperada con los productos del precontrato." />
+                              )}
+                            </SectionPanel>
+
+                            <SectionPanel
+                              icon={FolderClosed}
+                              title="Productos"
+                              description="Lotes, cenizarios o servicios incluidos en el precontrato."
+                            >
                               {item.productos.length === 0 ? (
-                                <p className="text-xs text-muted-foreground">
-                                  Sin productos vinculados.
-                                </p>
+                                <EmptyState message="Sin productos vinculados." />
                               ) : (
                                 <div className="flex flex-wrap gap-2">
                                   {item.productos.map((producto) => (
                                     <span
                                       key={producto.id_contrato_producto}
-                                      className="rounded-full bg-primary/10 px-2 py-1 text-xs text-primary"
+                                      className="rounded-full border border-primary/20 bg-primary-soft px-3 py-1.5 text-xs font-medium text-primary"
                                     >
                                       {getProductoLabel(producto)}
                                     </span>
                                   ))}
                                 </div>
                               )}
-                            </div>
+                            </SectionPanel>
 
-                            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                              <div>
-                                <p className="text-xs font-semibold text-muted-foreground mb-1">
-                                  Pre-autorizados
-                                </p>
-                                {item.autorizados.length === 0 ? (
-                                  <p className="text-xs text-muted-foreground">Sin registros.</p>
-                                ) : (
-                                  <div className="space-y-1">
-                                    {item.autorizados.map((autorizado) => (
-                                      <p
-                                        key={autorizado.id_contrato_autorizado}
-                                        className="text-xs text-card-foreground"
-                                      >
-                                        {autorizado.nombre}
-                                        {autorizado.cedula ? ` - ${autorizado.cedula}` : ""}
-                                      </p>
-                                    ))}
-                                  </div>
-                                )}
+                            <SectionPanel
+                              icon={Users}
+                              title="Autorizados y beneficiario"
+                              description="Personas relacionadas que pasarán al contrato vigente."
+                            >
+                              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                                <div className="space-y-3 rounded-lg border border-border/70 bg-muted/20 p-4">
+                                  <p className="text-xs font-semibold uppercase tracking-wide text-text-secondary">
+                                    Pre-autorizados
+                                  </p>
+                                  {item.autorizados.length === 0 ? (
+                                    <EmptyState message="Sin pre-autorizados registrados." />
+                                  ) : (
+                                    <div className="space-y-2">
+                                      {item.autorizados.map((autorizado) => (
+                                        <div
+                                          key={autorizado.id_contrato_autorizado}
+                                          className="flex items-center gap-3 rounded-md bg-surface px-3 py-2"
+                                        >
+                                          <User className="h-4 w-4 text-primary" />
+                                          <div>
+                                            <p className="text-sm font-medium text-text-primary">{autorizado.nombre}</p>
+                                            <p className="text-xs text-text-secondary">
+                                              {displayValue(autorizado.cedula, "Cedula no registrada")}
+                                            </p>
+                                          </div>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+                                <div className="space-y-3 rounded-lg border border-border/70 bg-muted/20 p-4">
+                                  <p className="text-xs font-semibold uppercase tracking-wide text-text-secondary">
+                                    Beneficiario
+                                  </p>
+                                  {item.beneficiarios.length === 0 ? (
+                                    <EmptyState message="Sin beneficiario registrado." />
+                                  ) : (
+                                    <div className="space-y-2">
+                                      {item.beneficiarios.slice(0, 1).map((beneficiario) => (
+                                        <div
+                                          key={beneficiario.id_contrato_beneficiario}
+                                          className="flex items-center gap-3 rounded-md bg-surface px-3 py-2"
+                                        >
+                                          <Users className="h-4 w-4 text-primary" />
+                                          <div>
+                                            <p className="text-sm font-medium text-text-primary">{beneficiario.nombre}</p>
+                                            <p className="text-xs text-text-secondary">
+                                              {displayValue(beneficiario.cedula, "Cedula no registrada")}
+                                              {beneficiario.contacto ? ` - ${beneficiario.contacto}` : ""}
+                                            </p>
+                                          </div>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
                               </div>
-                              <div>
-                                <p className="text-xs font-semibold text-muted-foreground mb-1">
-                                  Beneficiarios
-                                </p>
-                                {item.beneficiarios.length === 0 ? (
-                                  <p className="text-xs text-muted-foreground">Sin registros.</p>
-                                ) : (
-                                  <div className="space-y-1">
-                                    {item.beneficiarios.map((beneficiario) => (
-                                      <p
-                                        key={beneficiario.id_contrato_beneficiario}
-                                        className="text-xs text-card-foreground"
-                                      >
-                                        {beneficiario.nombre}
-                                        {beneficiario.cedula ? ` - ${beneficiario.cedula}` : ""}
-                                      </p>
-                                    ))}
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                          </CardContent>
-                        </Card>
+                            </SectionPanel>
+                          </div>
+                        </article>
                       );
                     })}
                   </div>
@@ -1141,7 +1367,7 @@ export default function DashboardPreContratos() {
             <AlertDialogTitle>Formalizar precontrato</AlertDialogTitle>
             <AlertDialogDescription>
               Confirma si deseas formalizar este registro. Al continuar, su estado pasará de
-              PRECONTRATO a CONTRATO y dejará de aparecer en esta vista.
+              PRECONTRATO a VIGENTE y dejará de aparecer en esta vista.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -1155,6 +1381,7 @@ export default function DashboardPreContratos() {
       </AlertDialog>
       )}
     </div>
+    </TooltipProvider>
   );
 }
 
