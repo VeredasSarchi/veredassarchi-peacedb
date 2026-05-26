@@ -174,6 +174,11 @@ type UploadFileResponse = {
   item: OneDriveItem;
 };
 
+type FileUploadButtonProps = {
+  uploading: boolean;
+  onFilesSelected: (files: FileList | null) => void;
+};
+
 type DriveFolderState = {
   loading: boolean;
   error: string | null;
@@ -210,6 +215,25 @@ function createEmptyDriveState(expected: OneDriveFolderPayload | null): DriveFol
     selectedFolderError: null,
     uploadingFolderId: null,
   };
+}
+
+function FileUploadButton({ uploading, onFilesSelected }: FileUploadButtonProps) {
+  return (
+    <label className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-border bg-background px-3 py-2 text-xs text-card-foreground hover:bg-muted/50">
+      <FileUp className="h-4 w-4" />
+      {uploading ? "Subiendo..." : "Adjuntar archivo"}
+      <input
+        type="file"
+        multiple
+        className="hidden"
+        disabled={uploading}
+        onChange={(event) => {
+          onFilesSelected(event.target.files);
+          event.currentTarget.value = "";
+        }}
+      />
+    </label>
+  );
 }
 
 async function getFunctionErrorMessage(error: unknown, fallback: string): Promise<string> {
@@ -1387,7 +1411,13 @@ export default function DashboardContratosActivos() {
   }, []);
 
   const handleFileUpload = useCallback(
-    async (contract: ContratoDetalle, folderId: string, folderName: string, files: FileList | null) => {
+    async (
+      contract: ContratoDetalle,
+      folderId: string,
+      folderName: string,
+      files: FileList | null,
+      refreshSelectedFolder = true,
+    ) => {
       if (!files || files.length === 0) return;
 
       const contractId = contract.contrato.id_contrato;
@@ -1415,7 +1445,9 @@ export default function DashboardContratosActivos() {
         }
 
         toast.success("Archivo(s) subido(s) correctamente a OneDrive");
-        await loadSubfolderItems(contractId, folderId, folderName);
+        if (refreshSelectedFolder) {
+          await loadSubfolderItems(contractId, folderId, folderName);
+        }
         await inspectContractFolder(contract);
       } catch (error) {
         const message = error instanceof Error ? error.message : "No se pudo subir el archivo";
@@ -1967,6 +1999,36 @@ export default function DashboardContratosActivos() {
 
                               {driveState.exists && (
                                 <div className="space-y-4">
+                                  {driveState.rootFolder?.id && (
+                                    <div className="rounded-md border border-border/70 bg-surface px-3 py-3">
+                                      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                                        <div className="flex items-center gap-3">
+                                          <FolderOpen className="h-5 w-5 text-primary" />
+                                          <div>
+                                            <p className="text-sm font-medium text-card-foreground">
+                                              {driveState.rootFolder.name || "Carpeta principal"}
+                                            </p>
+                                            <p className="text-xs text-muted-foreground">
+                                              Aqui puedes adjuntar el contrato del cliente
+                                            </p>
+                                          </div>
+                                        </div>
+                                        <FileUploadButton
+                                          uploading={driveState.uploadingFolderId === driveState.rootFolder.id}
+                                          onFilesSelected={(files) => {
+                                            void handleFileUpload(
+                                              item,
+                                              driveState.rootFolder!.id,
+                                              driveState.rootFolder!.name || "Carpeta principal",
+                                              files,
+                                              false,
+                                            );
+                                          }}
+                                        />
+                                      </div>
+                                    </div>
+                                  )}
+
                                   <div className="grid gap-3 md:grid-cols-2">
                                     {contractFolders.length > 0 ? contractFolders.map((folder) => (
                                       <div
@@ -2002,20 +2064,12 @@ export default function DashboardContratosActivos() {
                                         </div>
                                         {folder.id && (
                                           <div className="mt-3">
-                                            <label className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-border bg-background px-3 py-2 text-xs text-card-foreground hover:bg-muted/50">
-                                              <FileUp className="h-4 w-4" />
-                                              {driveState.uploadingFolderId === folder.id ? "Subiendo..." : "Adjuntar archivo"}
-                                              <input
-                                                type="file"
-                                                multiple
-                                                className="hidden"
-                                                disabled={driveState.uploadingFolderId === folder.id}
-                                                onChange={(event) => {
-                                                  void handleFileUpload(item, folder.id!, folder.name || "Carpeta", event.target.files);
-                                                  event.currentTarget.value = "";
-                                                }}
-                                              />
-                                            </label>
+                                            <FileUploadButton
+                                              uploading={driveState.uploadingFolderId === folder.id}
+                                              onFilesSelected={(files) => {
+                                                void handleFileUpload(item, folder.id!, folder.name || "Carpeta", files);
+                                              }}
+                                            />
                                           </div>
                                         )}
                                       </div>

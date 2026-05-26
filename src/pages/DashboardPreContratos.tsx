@@ -103,6 +103,18 @@ type OneDriveFolderResult = {
   subfolders: string[];
 };
 
+type FormalizeContractResult = {
+  ok: boolean;
+  id_contrato: number;
+  numero_formulario: string;
+  fecha_primera_cuota: string;
+  resultado_plan: {
+    ok: boolean;
+    id_plan_pago: number;
+    cuotas_generadas: number;
+  };
+};
+
 async function getFunctionErrorMessage(error: unknown, fallback: string): Promise<string> {
   const response =
     typeof error === "object" && error && "context" in error
@@ -155,6 +167,64 @@ function toInputNumber(value: number | null | undefined): string {
 function toDateInput(value: string | null | undefined): string {
   if (!value) return "";
   return value.split("T")[0];
+}
+
+function formatDateParts(year: number, month: number, day: number): string {
+  return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+}
+
+function getSuggestedFirstPaymentDate(
+  fechaFirma: string | null | undefined,
+  diaPagoMensual: number | null | undefined,
+): string {
+  if (!fechaFirma || !diaPagoMensual || diaPagoMensual < 1 || diaPagoMensual > 31) {
+    return "";
+  }
+
+  const parsed = new Date(fechaFirma);
+  if (Number.isNaN(parsed.getTime())) {
+    return "";
+  }
+
+  const nextMonthStart = new Date(parsed.getFullYear(), parsed.getMonth() + 1, 1);
+  const lastDay = new Date(nextMonthStart.getFullYear(), nextMonthStart.getMonth() + 1, 0).getDate();
+  const day = Math.min(diaPagoMensual, lastDay);
+
+  return formatDateParts(nextMonthStart.getFullYear(), nextMonthStart.getMonth() + 1, day);
+}
+
+function getPaymentPlanPrecheckError(record: PreContratoDetalle): string | null {
+  const plazoMeses =
+    record.contrato.total_meses ??
+    (record.contrato.plazo_anios !== null && record.contrato.plazo_anios !== undefined
+      ? record.contrato.plazo_anios * 12
+      : null);
+
+  if (plazoMeses !== null && plazoMeses !== undefined) {
+    return plazoMeses >= 0 ? null : "El contrato tiene un plazo inválido para generar el plan de pago";
+  }
+
+  const prima = record.contrato.monto_entregado_inicial ?? 0;
+  const saldoEstimado = Math.max(
+    record.contrato.saldo_pendiente ?? ((record.contrato.monto_arrendamiento_total ?? 0) - prima),
+    0,
+  );
+  const cuotaMensual = record.contrato.cuota_mensual ?? 0;
+  const tasaMensual = (record.contrato.tasa_interes_anual ?? 0) / 100 / 12;
+
+  if (saldoEstimado <= 0) {
+    return null;
+  }
+
+  if (cuotaMensual <= 0) {
+    return "El contrato no tiene un plazo registrado y tampoco una cuota mensual válida para generar el plan de pago";
+  }
+
+  if (tasaMensual > 0 && cuotaMensual <= saldoEstimado * tasaMensual) {
+    return "El contrato no tiene un plazo registrado y la cuota mensual no cubre los intereses para inferirlo";
+  }
+
+  return null;
 }
 
 function isMissingNumeroFormularioColumn(error: unknown): boolean {
@@ -335,7 +405,7 @@ function PrecontractLoadingSkeleton() {
 
 export default function DashboardPreContratos() {
   const navigate = useNavigate();
-  const { role } = useAuth();
+  const { user, role } = useAuth();
   const menuPath = role === "vendedor" ? "/vendedor" : "/";
   const isAdmin = role === "admin";
 
@@ -350,6 +420,8 @@ export default function DashboardPreContratos() {
   const [formalizeTarget, setFormalizeTarget] = useState<PreContratoDetalle | null>(null);
   const [formalizeNumeroFormulario, setFormalizeNumeroFormulario] = useState("");
   const [formalizeNumeroFormularioError, setFormalizeNumeroFormularioError] = useState<string | null>(null);
+  const [formalizeFechaPrimeraCuota, setFormalizeFechaPrimeraCuota] = useState("");
+  const [formalizeFechaPrimeraCuotaError, setFormalizeFechaPrimeraCuotaError] = useState<string | null>(null);
 
   const [editOpen, setEditOpen] = useState(false);
   const [editingRecord, setEditingRecord] = useState<PreContratoDetalle | null>(null);
@@ -710,6 +782,10 @@ export default function DashboardPreContratos() {
     setFormalizeTarget(record);
     setFormalizeNumeroFormulario("");
     setFormalizeNumeroFormularioError(null);
+    setFormalizeFechaPrimeraCuota(
+      getSuggestedFirstPaymentDate(record.contrato.fecha_firma, record.contrato.dia_pago_mensual),
+    );
+    setFormalizeFechaPrimeraCuotaError(null);
   };
 
   const handleSaveEdit = async ({ payload }: PreClienteSubmitPayload) => {
@@ -849,6 +925,8 @@ export default function DashboardPreContratos() {
 
     const numeroFormularioFinal = formalizeNumeroFormulario.trim();
     const numeroFormularioActual = formalizeTarget.contrato.numero_formulario?.trim() || "";
+    const fechaPrimeraCuota = formalizeFechaPrimeraCuota.trim();
+    const paymentPlanPrecheckError = getPaymentPlanPrecheckError(formalizeTarget);
     if (!numeroFormularioFinal) {
       setFormalizeNumeroFormularioError("El número de formulario oficial es obligatorio");
       toast.error("Debe indicar el número de formulario oficial");
@@ -857,6 +935,15 @@ export default function DashboardPreContratos() {
     if (numeroFormularioActual && numeroFormularioFinal === numeroFormularioActual) {
       setFormalizeNumeroFormularioError("Debe ingresar un número oficial diferente al consecutivo automático");
       toast.error("Debe editar el número de formulario antes de formalizar");
+      return;
+    }
+    if (!fechaPrimeraCuota) {
+      setFormalizeFechaPrimeraCuotaError("La fecha de primera cuota es obligatoria");
+      toast.error("Debe indicar la fecha de primera cuota");
+      return;
+    }
+    if (paymentPlanPrecheckError) {
+      toast.error(paymentPlanPrecheckError);
       return;
     }
 
@@ -911,13 +998,12 @@ export default function DashboardPreContratos() {
         throw new Error("OneDrive no devolvio una respuesta valida para la carpeta del cliente");
       }
 
-      const { error } = await supabase
-        .from("contrato")
-        .update({
-          estado_contrato: "VIGENTE",
-          numero_formulario: numeroFormularioFinal,
-        })
-        .eq("id_contrato", idContrato);
+      const { data: formalizeData, error } = await supabase.rpc("formalizar_contrato_y_generar_plan_pago", {
+        p_id_contrato: idContrato,
+        p_numero_formulario: numeroFormularioFinal,
+        p_fecha_primera_cuota: fechaPrimeraCuota,
+        p_usuario: user?.email ?? role ?? "usuario",
+      });
 
       if (error) {
         if ((error as { code?: string }).code === "23505") {
@@ -928,10 +1014,21 @@ export default function DashboardPreContratos() {
         throw error;
       }
 
-      toast.success(`Precontrato formalizado y carpeta creada en ${categoryName}.`);
+      const formalizeResult = asSingle(
+        formalizeData as FormalizeContractResult | FormalizeContractResult[] | null,
+      );
+      const cuotasGeneradas = formalizeResult?.resultado_plan?.cuotas_generadas ?? 0;
+
+      toast.success(
+        cuotasGeneradas > 0
+          ? `Precontrato formalizado, carpeta creada en ${categoryName} y plan de pago generado (${cuotasGeneradas} cuotas).`
+          : `Precontrato formalizado y carpeta creada en ${categoryName}.`,
+      );
       setFormalizeTarget(null);
       setFormalizeNumeroFormulario("");
       setFormalizeNumeroFormularioError(null);
+      setFormalizeFechaPrimeraCuota("");
+      setFormalizeFechaPrimeraCuotaError(null);
       await loadPrecontratos();
     } catch (error) {
       console.error("Error formalizando precontrato:", error);
@@ -1427,6 +1524,8 @@ export default function DashboardPreContratos() {
             setFormalizeTarget(null);
             setFormalizeNumeroFormulario("");
             setFormalizeNumeroFormularioError(null);
+            setFormalizeFechaPrimeraCuota("");
+            setFormalizeFechaPrimeraCuotaError(null);
           }
         }}
       >
@@ -1454,6 +1553,24 @@ export default function DashboardPreContratos() {
             />
             {formalizeNumeroFormularioError && (
               <p className="text-xs text-destructive">{formalizeNumeroFormularioError}</p>
+            )}
+          </div>
+          <div className="space-y-2">
+            <label className="text-sm font-medium text-text-primary" htmlFor="fecha-primera-cuota-formalizacion">
+              Fecha de primera cuota *
+            </label>
+            <Input
+              id="fecha-primera-cuota-formalizacion"
+              type="date"
+              value={formalizeFechaPrimeraCuota}
+              onChange={(event) => {
+                setFormalizeFechaPrimeraCuota(event.target.value);
+                setFormalizeFechaPrimeraCuotaError(null);
+              }}
+              disabled={processingId !== null}
+            />
+            {formalizeFechaPrimeraCuotaError && (
+              <p className="text-xs text-destructive">{formalizeFechaPrimeraCuotaError}</p>
             )}
           </div>
           <AlertDialogFooter>

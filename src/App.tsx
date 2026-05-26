@@ -11,6 +11,7 @@ import VendedorHome from "@/pages/VendedorHome";
 import DashboardPreContratos from "@/pages/DashboardPreContratos";
 import DashboardContratosActivos from "@/pages/DashboardContratosActivos";
 import DashboardContratosAnulados from "@/pages/DashboardContratosAnulados";
+import ControlCuotas from "@/pages/ControlCuotas";
 import PaquetesFunerarios from "@/pages/PaquetesFunerarios";
 import Cremaciones from "@/pages/Cremaciones";
 import Jardines from "@/pages/Jardines";
@@ -92,6 +93,15 @@ function AppLayout() {
             element={
               <ProtectedRoute allowedRoles={["admin", "vendedor"]}>
                 <DashboardContratosAnulados />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/control-cuotas"
+            element={
+              <ProtectedRoute allowedRoles={["admin"]}>
+                <ControlCuotas />
               </ProtectedRoute>
             }
           />

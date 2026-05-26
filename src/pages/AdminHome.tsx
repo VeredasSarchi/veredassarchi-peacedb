@@ -97,8 +97,9 @@ const AdminHome = () => {
               title: "Control de cuotas",
               description: "Seguimiento de cuotas, vencimientos y pagos pendientes.",
               icon: CreditCard,
+              action: () => navigate("/control-cuotas"),
               actionLabel: "Acceder",
-              disabled: true,
+              disabled: false,
             },
             {
               title: "Control de Mantenimiento",
