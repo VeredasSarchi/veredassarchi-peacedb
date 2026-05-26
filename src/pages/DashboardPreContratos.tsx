@@ -348,6 +348,8 @@ export default function DashboardPreContratos() {
 
   const [deleteTarget, setDeleteTarget] = useState<PreContratoDetalle | null>(null);
   const [formalizeTarget, setFormalizeTarget] = useState<PreContratoDetalle | null>(null);
+  const [formalizeNumeroFormulario, setFormalizeNumeroFormulario] = useState("");
+  const [formalizeNumeroFormularioError, setFormalizeNumeroFormularioError] = useState<string | null>(null);
 
   const [editOpen, setEditOpen] = useState(false);
   const [editingRecord, setEditingRecord] = useState<PreContratoDetalle | null>(null);
@@ -700,6 +702,16 @@ export default function DashboardPreContratos() {
     setEditOpen(true);
   };
 
+  const openFormalize = (record: PreContratoDetalle) => {
+    if (!isAdmin) {
+      toast.error("Esta acción solo está disponible para administrador");
+      return;
+    }
+    setFormalizeTarget(record);
+    setFormalizeNumeroFormulario("");
+    setFormalizeNumeroFormularioError(null);
+  };
+
   const handleSaveEdit = async ({ payload }: PreClienteSubmitPayload) => {
     if (!isAdmin) {
       toast.error("Esta acción solo está disponible para administrador");
@@ -830,10 +842,48 @@ export default function DashboardPreContratos() {
     }
     if (!formalizeTarget) return;
     const idContrato = formalizeTarget.contrato.id_contrato;
+    if (!supportsNumeroFormulario) {
+      toast.error("Debe aplicar la migración de numero_formulario antes de formalizar");
+      return;
+    }
+
+    const numeroFormularioFinal = formalizeNumeroFormulario.trim();
+    const numeroFormularioActual = formalizeTarget.contrato.numero_formulario?.trim() || "";
+    if (!numeroFormularioFinal) {
+      setFormalizeNumeroFormularioError("El número de formulario oficial es obligatorio");
+      toast.error("Debe indicar el número de formulario oficial");
+      return;
+    }
+    if (numeroFormularioActual && numeroFormularioFinal === numeroFormularioActual) {
+      setFormalizeNumeroFormularioError("Debe ingresar un número oficial diferente al consecutivo automático");
+      toast.error("Debe editar el número de formulario antes de formalizar");
+      return;
+    }
 
     setProcessingId(idContrato);
     try {
-      const { clientName, categoryName, categoryType, folderName } = buildOneDriveFolderPayload(formalizeTarget);
+      const duplicateCheck = await supabase
+        .from("contrato")
+        .select("id_contrato")
+        .eq("numero_formulario", numeroFormularioFinal)
+        .neq("id_contrato", idContrato)
+        .limit(1);
+
+      if (duplicateCheck.error) throw duplicateCheck.error;
+      if ((duplicateCheck.data ?? []).length > 0) {
+        setFormalizeNumeroFormularioError("Ya existe otro contrato con ese número de formulario");
+        toast.error("Ya existe otro contrato con ese número de formulario");
+        return;
+      }
+
+      const formalizeRecord: PreContratoDetalle = {
+        ...formalizeTarget,
+        contrato: {
+          ...formalizeTarget.contrato,
+          numero_formulario: numeroFormularioFinal,
+        },
+      };
+      const { clientName, categoryName, categoryType, folderName } = buildOneDriveFolderPayload(formalizeRecord);
 
       // Primero se asegura la estructura en OneDrive; si esta parte falla, el contrato no se formaliza.
       const { data, error: oneDriveError } = await supabase.functions.invoke<OneDriveFolderResult>(
@@ -863,13 +913,25 @@ export default function DashboardPreContratos() {
 
       const { error } = await supabase
         .from("contrato")
-        .update({ estado_contrato: "VIGENTE" })
+        .update({
+          estado_contrato: "VIGENTE",
+          numero_formulario: numeroFormularioFinal,
+        })
         .eq("id_contrato", idContrato);
 
-      if (error) throw error;
+      if (error) {
+        if ((error as { code?: string }).code === "23505") {
+          setFormalizeNumeroFormularioError("Ya existe otro contrato con ese número de formulario");
+          toast.error("Ya existe otro contrato con ese número de formulario");
+          return;
+        }
+        throw error;
+      }
 
       toast.success(`Precontrato formalizado y carpeta creada en ${categoryName}.`);
       setFormalizeTarget(null);
+      setFormalizeNumeroFormulario("");
+      setFormalizeNumeroFormularioError(null);
       await loadPrecontratos();
     } catch (error) {
       console.error("Error formalizando precontrato:", error);
@@ -1051,7 +1113,7 @@ export default function DashboardPreContratos() {
                                   </Button>
                                   <Button
                                     size="sm"
-                                    onClick={() => setFormalizeTarget(item)}
+                                    onClick={() => openFormalize(item)}
                                     disabled={processing}
                                   >
                                     <FileCheck2 className="h-4 w-4" />
@@ -1360,21 +1422,51 @@ export default function DashboardPreContratos() {
       {isAdmin && (
         <AlertDialog
         open={Boolean(formalizeTarget)}
-        onOpenChange={(open) => !open && setFormalizeTarget(null)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setFormalizeTarget(null);
+            setFormalizeNumeroFormulario("");
+            setFormalizeNumeroFormularioError(null);
+          }
+        }}
       >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Formalizar precontrato</AlertDialogTitle>
             <AlertDialogDescription>
-              Confirma si deseas formalizar este registro. Al continuar, su estado pasará de
-              PRECONTRATO a VIGENTE y dejará de aparecer en esta vista.
+              Ingresa el número de formulario oficial antes de formalizar. El consecutivo automático actual es{" "}
+              {formalizeTarget?.contrato.numero_formulario || "no definido"}.
             </AlertDialogDescription>
           </AlertDialogHeader>
+          <div className="space-y-2">
+            <label className="text-sm font-medium text-text-primary" htmlFor="numero-formulario-formalizacion">
+              Número de formulario oficial *
+            </label>
+            <Input
+              id="numero-formulario-formalizacion"
+              value={formalizeNumeroFormulario}
+              onChange={(event) => {
+                setFormalizeNumeroFormulario(event.target.value);
+                setFormalizeNumeroFormularioError(null);
+              }}
+              placeholder="Ej: F-001"
+              disabled={processingId !== null}
+            />
+            {formalizeNumeroFormularioError && (
+              <p className="text-xs text-destructive">{formalizeNumeroFormularioError}</p>
+            )}
+          </div>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancelar</AlertDialogCancel>
-            <AlertDialogAction onClick={() => void handleFormalizePrecontrato()}>
+            <AlertDialogCancel disabled={processingId !== null}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(event) => {
+                event.preventDefault();
+                void handleFormalizePrecontrato();
+              }}
+              disabled={processingId !== null}
+            >
               <CheckCircle2 className="h-4 w-4" />
-              Confirmar formalización
+              {processingId !== null ? "Formalizando..." : "Confirmar formalización"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

@@ -35,7 +35,7 @@ import type { Tables, TablesInsert } from "@/integrations/supabase/types";
 import { toast } from "sonner";
 
 const preClienteSchema = z.object({
-  numero_formulario: z.string().min(1, "El número de formulario es requerido"),
+  numero_formulario: z.string().optional(),
   numero_contrato: z.string().max(50, "El número de contrato no puede superar 50 caracteres").optional(),
   nombre_completo: z.string().min(1, "El nombre completo es requerido"),
   estado_civil: z.string().optional(),
@@ -170,6 +170,45 @@ function isFormalizedContractState(estado: string | null | undefined): boolean {
   return estado === "VIGENTE";
 }
 
+function isMissingPrecontractNumberRpc(error: unknown): boolean {
+  const code =
+    typeof error === "object" && error && "code" in error
+      ? String((error as { code?: unknown }).code || "")
+      : "";
+  const message =
+    typeof error === "object" && error && "message" in error
+      ? String((error as { message?: unknown }).message || "")
+      : "";
+  return code === "PGRST202" || message.toLowerCase().includes("generar_numero_precontrato");
+}
+
+async function generatePrecontractNumeroFormulario(): Promise<string> {
+  const rpcResult = await (supabase.rpc as any)("generar_numero_precontrato");
+  if (!rpcResult.error && typeof rpcResult.data === "string" && rpcResult.data.trim()) {
+    return rpcResult.data.trim();
+  }
+  if (rpcResult.error && !isMissingPrecontractNumberRpc(rpcResult.error)) {
+    throw rpcResult.error;
+  }
+
+  const { data, error } = await supabase
+    .from("contrato")
+    .select("numero_formulario")
+    .not("numero_formulario", "is", null)
+    .limit(5000);
+
+  if (error) throw error;
+
+  const maxConsecutivo = (data ?? []).reduce((max, row) => {
+    const match = String(row.numero_formulario ?? "").match(/^PRE-(\d+)$/i);
+    if (!match) return max;
+    const value = Number(match[1]);
+    return Number.isFinite(value) ? Math.max(max, value) : max;
+  }, 0);
+
+  return `PRE-${String(maxConsecutivo + 1).padStart(6, "0")}`;
+}
+
 function parseNumber(value?: string): number | null {
   if (!value) {
     return null;
@@ -243,6 +282,7 @@ interface PreClienteFormProps {
   skipNumeroFormularioUniquenessCheck?: boolean;
   ignoredLoteIds?: string[];
   ignoredCenizarioIds?: string[];
+  autoGenerateNumeroFormulario?: boolean;
 }
 
 export function PreClienteForm({
@@ -263,6 +303,7 @@ export function PreClienteForm({
   skipNumeroFormularioUniquenessCheck = false,
   ignoredLoteIds = [],
   ignoredCenizarioIds = [],
+  autoGenerateNumeroFormulario = false,
 }: PreClienteFormProps) {
   const [jardines, setJardines] = useState<Jardin[]>([]);
   const [lotes, setLotes] = useState<Lote[]>([]);
@@ -825,7 +866,9 @@ export function PreClienteForm({
         return;
       }
 
-      const numeroFormulario = values.numero_formulario.trim();
+      const numeroFormulario = autoGenerateNumeroFormulario
+        ? await generatePrecontractNumeroFormulario()
+        : values.numero_formulario?.trim() || "";
       if (!numeroFormulario) {
         form.setError("numero_formulario", {
           message: "El número de formulario es requerido",
@@ -960,8 +1003,13 @@ export function PreClienteForm({
         return [buildPayloadByType(tipo)];
       });
 
+      const finalValues: PreClienteFormValues = {
+        ...values,
+        numero_formulario: numeroFormulario,
+      };
+
       onComplete({
-        values,
+        values: finalValues,
         payload: {
           cliente: clientePayload,
           contrato: contratoPayload,

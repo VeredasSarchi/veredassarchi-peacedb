@@ -288,6 +288,8 @@ export default function Precontratos() {
               <PreClienteForm
                 initialValues={preClienteDraft?.values}
                 onComplete={handlePreClienteComplete}
+                hideNumeroFormulario={true}
+                autoGenerateNumeroFormulario={true}
               />
             )}
 
