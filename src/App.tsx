@@ -12,6 +12,7 @@ import DashboardPreContratos from "@/pages/DashboardPreContratos";
 import DashboardContratosActivos from "@/pages/DashboardContratosActivos";
 import DashboardContratosAnulados from "@/pages/DashboardContratosAnulados";
 import ControlCuotas from "@/pages/ControlCuotas";
+import ControlMantenimiento from "@/pages/ControlMantenimiento";
 import PaquetesFunerarios from "@/pages/PaquetesFunerarios";
 import Cremaciones from "@/pages/Cremaciones";
 import Jardines from "@/pages/Jardines";
@@ -102,6 +103,15 @@ function AppLayout() {
             element={
               <ProtectedRoute allowedRoles={["admin"]}>
                 <ControlCuotas />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/control-mantenimiento"
+            element={
+              <ProtectedRoute allowedRoles={["admin"]}>
+                <ControlMantenimiento />
               </ProtectedRoute>
             }
           />

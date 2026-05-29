@@ -24,6 +24,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { formatContractDisplayLabel } from "@/lib/contract-display";
 import { buildOneDriveFolderPayload } from "@/lib/contract-onedrive";
 import { renameContractFolderAsCancelled } from "@/lib/onedrive-service";
 
@@ -512,7 +513,7 @@ export default function DashboardContratosAnulados() {
                               <FileX2 className="mt-1 h-5 w-5 text-destructive" />
                               <div>
                                 <CardTitle className="text-base">
-                                  {item.contrato.numero_formulario || item.contrato.numero_contrato}
+                                  {formatContractDisplayLabel(item.contrato)}
                                 </CardTitle>
                                 <CardDescription>
                                   Anulado: {formatDate(item.contrato.fecha_anulacion)} - Usuario:{" "}

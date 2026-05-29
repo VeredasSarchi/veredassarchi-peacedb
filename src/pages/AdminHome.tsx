@@ -12,7 +12,6 @@ import {
   CheckCircle2,
   FileCheck2,
   FileX2,
-  Folder,
   Banknote,
   CreditCard,
   Wrench,
@@ -72,13 +71,6 @@ const AdminHome = () => {
               disabled: false,
             },
             {
-              title: "Docs Adjuntos (One Drive)",
-              description: "Accede a documentos y respaldos almacenados en One Drive.",
-              icon: Folder,
-              actionLabel: "Acceder",
-              disabled: true,
-            },
-            {
               title: "Conexion OneDrive",
               description: "Reconecta la cuenta de Microsoft y valida el estado actual de la integracion.",
               icon: Link,
@@ -103,10 +95,11 @@ const AdminHome = () => {
             },
             {
               title: "Control de Mantenimiento",
-              description: "Gestion de tareas y ordenes de mantenimiento.",
+              description: "Cobro anual, alertas y seguimiento de cuotas de mantenimiento.",
               icon: Wrench,
+              action: () => navigate("/control-mantenimiento"),
               actionLabel: "Acceder",
-              disabled: true,
+              disabled: false,
             },
             {
               title: "Paquetes Funerarios",

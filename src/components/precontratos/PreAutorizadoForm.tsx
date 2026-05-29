@@ -28,6 +28,10 @@ const preAutorizadoSchema = z.object({
 });
 
 type PreAutorizadoFormValues = z.infer<typeof preAutorizadoSchema>;
+type PreAutorizadoFormValueItem = {
+  nombre?: string;
+  cedula?: string;
+};
 
 interface PreAutorizadoFormProps {
   preAutorizados: PreAutorizadoDraft[];
@@ -40,6 +44,15 @@ interface PreAutorizadoFormProps {
 function sanitizeAutorizados(values?: PreAutorizadoDraft[]) {
   const normalized = values?.filter((item) => item.nombre.trim().length > 0) ?? [];
   return normalized.length > 0 ? normalized : [{ nombre: "", cedula: "" }];
+}
+
+function normalizeAutorizados(values?: PreAutorizadoFormValueItem[]): PreAutorizadoDraft[] {
+  return (values ?? [])
+    .map((item) => ({
+      nombre: item.nombre?.trim() ?? "",
+      cedula: item.cedula?.trim() ?? "",
+    }))
+    .filter((item) => item.nombre.length > 0);
 }
 
 export function PreAutorizadoForm({
@@ -66,12 +79,12 @@ export function PreAutorizadoForm({
   }, [preAutorizados, form]);
 
   const onSubmit = (values: PreAutorizadoFormValues) => {
-    onSave(values.autorizados);
+    onSave(normalizeAutorizados(values.autorizados));
     onComplete();
   };
 
   const handleGoBack = () => {
-    onBack(form.getValues("autorizados"));
+    onBack(normalizeAutorizados(form.getValues("autorizados")));
   };
 
   return (

@@ -17,6 +17,7 @@ import type { Tables } from "@/integrations/supabase/types";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { formatContractDisplayLabel } from "@/lib/contract-display";
 import { Label } from "@/components/ui/label";
 import {
   Dialog,
@@ -259,10 +260,10 @@ export default function Cremaciones() {
       if (!item.id_tipo_cremacion || !item.contrato) return;
 
       const clienteNombre = item.contrato.cliente?.nombre_completo?.trim() || "Cliente sin nombre";
-      const referencia =
-        item.contrato.numero_formulario?.trim() ||
-        item.contrato.numero_contrato?.trim() ||
-        String(item.contrato.id_contrato);
+      const referencia = formatContractDisplayLabel(item.contrato, {
+        prefix: false,
+        fallback: String(item.contrato.id_contrato),
+      });
       const folderName = `${clienteNombre} - ${referencia}`;
       const key = `${item.id_tipo_cremacion}-${item.contrato.id_contrato}`;
       const folder: ClienteFolder = {

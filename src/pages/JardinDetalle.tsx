@@ -35,14 +35,8 @@ type Lote = Tables<"lote">;
 type TipoLote = Tables<"tipo_lote">;
 type TipoCenizario = Tables<"tipo_cenizario">;
 
-type LoteEspacio = {
-  id_lote_espacio: number;
-  id_lote: number;
-  numero_espacio: number;
+type LoteEspacio = Omit<Tables<"lote_espacio">, "estado"> & {
   estado: "DISPONIBLE" | "OCUPADO";
-  nombre_ocupante: string | null;
-  fecha_ocupacion: Date | null;
-  id_contrato_producto: number | null;
 };
 
 type LoteStatus = "available" | "precontract" | "contract" | "occupant" | "familiar";
@@ -619,7 +613,7 @@ export default function JardinDetalle() {
           numero_espacio: space.numero_espacio,
           estado: occupied ? "OCUPADO" : "DISPONIBLE",
           nombre_ocupante: occupied ? draft.nombre.trim() : null,
-          fecha_ocupacion: occupied ? new Date() : null,
+          fecha_ocupacion: occupied ? new Date().toISOString() : null,
           id_contrato_producto: space.id_contrato_producto ?? null,
         });
         return acc;

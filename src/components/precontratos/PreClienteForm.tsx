@@ -70,6 +70,7 @@ const preClienteSchema = z.object({
   prima: z.string().optional(),
   saldo: z.string().optional(),
   monto_mantenimiento_anual: z.string().optional(),
+  fecha_inicio_mantenimiento: z.string().optional(),
   anio_inicio_mantenimiento: z.string().optional(),
   observaciones: z.string().optional(),
   fecha: z.string().optional(),
@@ -93,7 +94,12 @@ const REQUIRED_CREMATION_TYPES = ["ESPERANZA", "LA LUZ", "MASCOTAS", "RENACER"] 
 const DEFAULT_VENDOR_NAME = "sarchiveredas@gmail.com";
 
 export type PreClienteProductoDraft = Omit<TablesInsert<"contrato_producto">, "id_contrato">;
-export type PreClienteContratoDraft = Omit<TablesInsert<"contrato">, "id_contrato" | "id_cliente">;
+export type PreClienteContratoDraft = Omit<
+  TablesInsert<"contrato">,
+  "id_contrato" | "id_cliente"
+> & {
+  fecha_inicio_mantenimiento?: string | null;
+};
 export type PreClienteDraftPayload = {
   cliente: Omit<TablesInsert<"cliente">, "id_cliente">;
   contrato: PreClienteContratoDraft;
@@ -133,6 +139,7 @@ const EMPTY_PRE_CLIENTE_VALUES: PreClienteFormValues = {
   prima: "",
   saldo: "",
   monto_mantenimiento_anual: "",
+  fecha_inicio_mantenimiento: "",
   anio_inicio_mantenimiento: "",
   observaciones: "",
   fecha: "",
@@ -183,7 +190,12 @@ function isMissingPrecontractNumberRpc(error: unknown): boolean {
 }
 
 async function generatePrecontractNumeroFormulario(): Promise<string> {
-  const rpcResult = await (supabase.rpc as any)("generar_numero_precontrato");
+  const rpcResult = (await supabase.rpc(
+    "generar_numero_precontrato" as never,
+  )) as {
+    data?: string | null;
+    error?: unknown;
+  };
   if (!rpcResult.error && typeof rpcResult.data === "string" && rpcResult.data.trim()) {
     return rpcResult.data.trim();
   }
@@ -262,6 +274,21 @@ function formatCRC(value: number): string {
     return "";
   }
   return crcCurrencyFormatter.format(value);
+}
+
+function getMaintenanceYearFromDate(value: string | undefined): number | null {
+  const trimmed = value?.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  const match = /^(\d{4})-\d{2}-\d{2}$/.exec(trimmed);
+  if (!match) {
+    return null;
+  }
+
+  const year = Number(match[1]);
+  return Number.isFinite(year) ? year : null;
 }
 
 interface PreClienteFormProps {
@@ -940,6 +967,11 @@ export function PreClienteForm({
       const totalMeses = parseNumber(values.total_meses);
       const plazoAniosCompat =
         totalMeses !== null && totalMeses % 12 === 0 ? totalMeses / 12 : null;
+      const fechaInicioMantenimiento =
+        values.fecha_inicio_mantenimiento?.trim() || null;
+      const anioInicioMantenimientoCompat =
+        getMaintenanceYearFromDate(fechaInicioMantenimiento || undefined) ??
+        parseNumber(values.anio_inicio_mantenimiento);
 
       const contratoPayload: PreClienteContratoDraft = {
         numero_contrato: numeroContrato,
@@ -956,7 +988,8 @@ export function PreClienteForm({
         saldo_pendiente: parseNumber(values.saldo),
         cantidad_lotes: parseNumber(values.cantidad_lotes),
         monto_mantenimiento_anual: parseNumber(values.monto_mantenimiento_anual),
-        anio_inicio_mantenimiento: parseNumber(values.anio_inicio_mantenimiento),
+        fecha_inicio_mantenimiento: fechaInicioMantenimiento,
+        anio_inicio_mantenimiento: anioInicioMantenimientoCompat,
         observaciones_contrato: values.observaciones || null,
         estado_contrato: "PRECONTRATO",
       };
@@ -1821,12 +1854,12 @@ export function PreClienteForm({
 
             <FormField
               control={form.control}
-              name="anio_inicio_mantenimiento"
+              name="fecha_inicio_mantenimiento"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Año Inicio Mantenimiento</FormLabel>
+                  <FormLabel>Fecha de Inicio de Mantenimiento</FormLabel>
                   <FormControl>
-                    <Input type="number" placeholder="Ej: 2026" {...field} />
+                    <Input type="date" {...field} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>

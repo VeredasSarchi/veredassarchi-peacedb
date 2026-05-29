@@ -61,9 +61,13 @@ import { Input } from "@/components/ui/input";
 import { PreClienteForm, type PreClienteFormValues, type PreClienteSubmitPayload } from "@/components/precontratos/PreClienteForm";
 import type { ProductType } from "@/components/precontratos/PreClienteForm";
 import { buildOneDriveFolderPayload } from "@/lib/contract-onedrive";
+import { formatContractDisplayLabel } from "@/lib/contract-display";
 import { cn } from "@/lib/utils";
 
-type ContratoRow = Tables<"contrato"> & { numero_formulario: string | null };
+type ContratoRow = Tables<"contrato"> & {
+  numero_formulario: string | null;
+  fecha_inicio_mantenimiento?: string | null;
+};
 type ClienteRow = Tables<"cliente">;
 type VendedorRow = Tables<"vendedor">;
 type AutorizadoRow = Tables<"contrato_autorizados">;
@@ -92,6 +96,27 @@ type PreContratoDetalle = {
   productos: ProductoDetalle[];
   autorizados: AutorizadoRow[];
   beneficiarios: BeneficiarioRow[];
+};
+
+type PreContratoSelectRow = Tables<"contrato"> & {
+  numero_formulario?: string | null;
+  cliente?: ClienteRow | ClienteRow[] | null;
+  vendedor?: VendedorRow | VendedorRow[] | null;
+};
+
+type ProductoDetalleRawRow = Tables<"contrato_producto"> & {
+  lote?:
+    | (Pick<Tables<"lote">, "id_lote" | "numero_lote" | "id_jardin"> & {
+        jardin?: JardinMini | JardinMini[] | null;
+      })
+    | null;
+  tipo_cenizario?:
+    | (Pick<Tables<"tipo_cenizario">, "id_tipo_cenizario" | "numero_cenizario" | "descripcion" | "id_jardin"> & {
+        jardin?: JardinMini | JardinMini[] | null;
+      })
+    | null;
+  tipo_cremacion?: Pick<Tables<"tipo_cremacion">, "id_tipo_cremacion" | "descripcion"> | null;
+  paquete_funerario?: Pick<Tables<"paquete_funerario">, "id_paquete" | "descripcion"> | null;
 };
 
 type OneDriveFolderResult = {
@@ -167,6 +192,36 @@ function toInputNumber(value: number | null | undefined): string {
 function toDateInput(value: string | null | undefined): string {
   if (!value) return "";
   return value.split("T")[0];
+}
+
+function getMaintenanceStartInputValue(
+  fechaInicioMantenimiento: string | null | undefined,
+  anioInicioMantenimiento: number | null | undefined,
+): string {
+  if (fechaInicioMantenimiento) {
+    return toDateInput(fechaInicioMantenimiento);
+  }
+
+  if (anioInicioMantenimiento) {
+    return `${anioInicioMantenimiento}-01-01`;
+  }
+
+  return "";
+}
+
+function formatMaintenanceStartDisplay(
+  fechaInicioMantenimiento: string | null | undefined,
+  anioInicioMantenimiento: number | null | undefined,
+): string {
+  if (fechaInicioMantenimiento) {
+    return formatDate(fechaInicioMantenimiento);
+  }
+
+  if (anioInicioMantenimiento) {
+    return String(anioInicioMantenimiento);
+  }
+
+  return "No definido";
 }
 
 function formatDateParts(year: number, month: number, day: number): string {
@@ -501,6 +556,10 @@ export default function DashboardPreContratos() {
       prima: toPreClienteNumber(record.contrato.monto_entregado_inicial),
       saldo: toPreClienteNumber(record.contrato.saldo_pendiente),
       monto_mantenimiento_anual: toPreClienteNumber(record.contrato.monto_mantenimiento_anual),
+      fecha_inicio_mantenimiento: getMaintenanceStartInputValue(
+        record.contrato.fecha_inicio_mantenimiento,
+        record.contrato.anio_inicio_mantenimiento,
+      ),
       anio_inicio_mantenimiento: toPreClienteNumber(record.contrato.anio_inicio_mantenimiento),
       observaciones: record.contrato.observaciones_contrato || "",
       fecha: toDateInput(record.contrato.fecha_firma),
@@ -528,6 +587,7 @@ export default function DashboardPreContratos() {
           saldo_pendiente,
           cantidad_lotes,
           monto_mantenimiento_anual,
+          fecha_inicio_mantenimiento,
           anio_inicio_mantenimiento,
           monto_apertura,
           observaciones_contrato,
@@ -550,16 +610,27 @@ export default function DashboardPreContratos() {
           )
         `;
 
-      const fetchContratos = (includeNumeroFormulario: boolean) =>
-        supabase
+      const fetchContratos = async (
+        includeNumeroFormulario: boolean,
+      ): Promise<{
+        data: PreContratoSelectRow[] | null;
+        error: unknown | null;
+      }> => {
+        const selectedColumns: string = includeNumeroFormulario
+          ? `numero_formulario,${contratoSelectBase}`
+          : contratoSelectBase;
+
+        const result = await supabase
           .from("contrato")
-          .select(
-            includeNumeroFormulario
-              ? `numero_formulario,${contratoSelectBase}`
-              : contratoSelectBase
-          )
+          .select(selectedColumns)
           .eq("estado_contrato", "PRECONTRATO")
           .order("id_contrato", { ascending: false });
+
+        return {
+          data: ((result.data ?? null) as unknown) as PreContratoSelectRow[] | null,
+          error: result.error,
+        };
+      };
 
       const firstAttempt = await fetchContratos(true);
       let contratosData = firstAttempt.data;
@@ -578,10 +649,11 @@ export default function DashboardPreContratos() {
       }
       setSupportsNumeroFormulario(hasNumeroFormulario);
 
-      const contratosBase: PreContratoDetalle[] = (contratosData ?? []).map((row: any) => ({
+      const contratoRows = contratosData ?? [];
+      const contratosBase: PreContratoDetalle[] = contratoRows.map((row) => ({
         contrato: {
           ...(row as Tables<"contrato">),
-          numero_formulario: row.numero_formulario ?? row.numero_contrato ?? null,
+          numero_formulario: row.numero_formulario ?? null,
         } as ContratoRow,
         cliente: asSingle(row.cliente),
         vendedor: asSingle(row.vendedor),
@@ -652,8 +724,9 @@ export default function DashboardPreContratos() {
       if (autorizadosRes.error) throw autorizadosRes.error;
       if (beneficiariosRes.error) throw beneficiariosRes.error;
 
+      const productoRows = ((productosRes.data ?? []) as unknown) as ProductoDetalleRawRow[];
       const productosByContrato = new Map<number, ProductoDetalle[]>();
-      (productosRes.data ?? []).forEach((raw: any) => {
+      productoRows.forEach((raw) => {
         const loteRaw = asSingle(raw.lote);
         const tipoCenizarioRaw = asSingle(raw.tipo_cenizario);
         const item: ProductoDetalle = {
@@ -1146,10 +1219,9 @@ export default function DashboardPreContratos() {
                           return null;
                         }
                       })();
-                      const precontractTitle =
-                        item.contrato.numero_formulario ||
-                        item.contrato.numero_contrato ||
-                        `Precontrato ${item.contrato.id_contrato}`;
+                      const precontractTitle = formatContractDisplayLabel(item.contrato, {
+                        fallback: "Formulario pendiente",
+                      });
                       const plazoContrato =
                         item.contrato.total_meses !== null && item.contrato.total_meses !== undefined
                           ? `${item.contrato.total_meses} meses`
@@ -1168,11 +1240,10 @@ export default function DashboardPreContratos() {
                         item.contrato.cantidad_lotes !== null && item.contrato.cantidad_lotes !== undefined
                           ? String(item.contrato.cantidad_lotes)
                           : "No definido";
-                      const anioMantenimiento =
-                        item.contrato.anio_inicio_mantenimiento !== null &&
-                        item.contrato.anio_inicio_mantenimiento !== undefined
-                          ? String(item.contrato.anio_inicio_mantenimiento)
-                          : "No definido";
+                      const anioMantenimiento = formatMaintenanceStartDisplay(
+                        item.contrato.fecha_inicio_mantenimiento,
+                        item.contrato.anio_inicio_mantenimiento,
+                      );
 
                       return (
                         <article
@@ -1533,8 +1604,8 @@ export default function DashboardPreContratos() {
           <AlertDialogHeader>
             <AlertDialogTitle>Formalizar precontrato</AlertDialogTitle>
             <AlertDialogDescription>
-              Ingresa el número de formulario oficial antes de formalizar. El consecutivo automático actual es{" "}
-              {formalizeTarget?.contrato.numero_formulario || "no definido"}.
+              Ingresa el número de formulario oficial antes de formalizar. Mientras el contrato siga como
+              precontrato se mostrará como Formulario pendiente.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <div className="space-y-2">

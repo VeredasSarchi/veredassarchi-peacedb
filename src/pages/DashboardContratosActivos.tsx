@@ -73,11 +73,15 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { formatContractDisplayLabel } from "@/lib/contract-display";
 import { buildOneDriveFolderPayload, type OneDriveFolderPayload } from "@/lib/contract-onedrive";
 import { renameContractFolderAsCancelled } from "@/lib/onedrive-service";
 import { cn } from "@/lib/utils";
 
-type ContratoRow = Tables<"contrato"> & { numero_formulario: string | null };
+type ContratoRow = Tables<"contrato"> & {
+  numero_formulario: string | null;
+  fecha_inicio_mantenimiento?: string | null;
+};
 type ClienteRow = Tables<"cliente">;
 type VendedorRow = Tables<"vendedor">;
 type AutorizadoRow = Tables<"contrato_autorizados">;
@@ -108,6 +112,27 @@ type ContratoDetalle = {
   autorizados: AutorizadoRow[];
   beneficiarios: BeneficiarioRow[];
   editLogs: EditLogRow[];
+};
+
+type ContratoSelectRow = Tables<"contrato"> & {
+  numero_formulario?: string | null;
+  cliente?: ClienteRow | ClienteRow[] | null;
+  vendedor?: VendedorRow | VendedorRow[] | null;
+};
+
+type ProductoDetalleRawRow = Tables<"contrato_producto"> & {
+  lote?:
+    | (Pick<Tables<"lote">, "id_lote" | "numero_lote" | "id_jardin"> & {
+        jardin?: JardinMini | JardinMini[] | null;
+      })
+    | null;
+  tipo_cenizario?:
+    | (Pick<Tables<"tipo_cenizario">, "id_tipo_cenizario" | "numero_cenizario" | "descripcion" | "id_jardin"> & {
+        jardin?: JardinMini | JardinMini[] | null;
+      })
+    | null;
+  tipo_cremacion?: Pick<Tables<"tipo_cremacion">, "id_tipo_cremacion" | "descripcion"> | null;
+  paquete_funerario?: Pick<Tables<"paquete_funerario">, "id_paquete" | "descripcion"> | null;
 };
 
 type AutorizadoDraft = {
@@ -477,6 +502,25 @@ function formatDate(value: string | null): string {
   return parsed.toLocaleString("es-CR");
 }
 
+function formatMaintenanceStartDisplay(
+  fechaInicioMantenimiento: string | null | undefined,
+  anioInicioMantenimiento: number | null | undefined,
+): string {
+  if (fechaInicioMantenimiento) {
+    const parsed = new Date(`${fechaInicioMantenimiento}T00:00:00`);
+    if (!Number.isNaN(parsed.getTime())) {
+      return parsed.toLocaleDateString("es-CR");
+    }
+    return fechaInicioMantenimiento;
+  }
+
+  if (anioInicioMantenimiento) {
+    return String(anioInicioMantenimiento);
+  }
+
+  return "No definido";
+}
+
 function formatFileSize(value: number | null) {
   if (value === null || value === undefined) return "Sin tamano";
   if (value < 1024) return `${value} B`;
@@ -769,6 +813,7 @@ export default function DashboardContratosActivos() {
           saldo_pendiente,
           cantidad_lotes,
           monto_mantenimiento_anual,
+          fecha_inicio_mantenimiento,
           anio_inicio_mantenimiento,
           monto_apertura,
           observaciones_contrato,
@@ -791,14 +836,27 @@ export default function DashboardContratosActivos() {
           )
         `;
 
-      const fetchContratos = (includeNumeroFormulario: boolean) =>
-        supabase
+      const fetchContratos = async (
+        includeNumeroFormulario: boolean,
+      ): Promise<{
+        data: ContratoSelectRow[] | null;
+        error: unknown | null;
+      }> => {
+        const selectedColumns: string = includeNumeroFormulario
+          ? `numero_formulario,${contratoSelectBase}`
+          : contratoSelectBase;
+
+        const result = await supabase
           .from("contrato")
-          .select(
-            includeNumeroFormulario ? `numero_formulario,${contratoSelectBase}` : contratoSelectBase,
-          )
+          .select(selectedColumns)
           .eq("estado_contrato", "VIGENTE")
           .order("id_contrato", { ascending: false });
+
+        return {
+          data: ((result.data ?? null) as unknown) as ContratoSelectRow[] | null,
+          error: result.error,
+        };
+      };
 
       const firstAttempt = await fetchContratos(true);
       let contratosData = firstAttempt.data;
@@ -817,10 +875,11 @@ export default function DashboardContratosActivos() {
       }
       setSupportsNumeroFormulario(hasNumeroFormulario);
 
-      const contratosBase: ContratoDetalle[] = (contratosData ?? []).map((row: any) => ({
+      const contratoRows = contratosData ?? [];
+      const contratosBase: ContratoDetalle[] = contratoRows.map((row) => ({
         contrato: {
           ...(row as Tables<"contrato">),
-          numero_formulario: row.numero_formulario ?? row.numero_contrato ?? null,
+          numero_formulario: row.numero_formulario ?? null,
         } as ContratoRow,
         cliente: asSingle(row.cliente),
         vendedor: asSingle(row.vendedor),
@@ -895,8 +954,9 @@ export default function DashboardContratosActivos() {
         throw editLogsRes.error;
       }
 
+      const productoRows = ((productosRes.data ?? []) as unknown) as ProductoDetalleRawRow[];
       const productosByContrato = new Map<number, ProductoDetalle[]>();
-      (productosRes.data ?? []).forEach((raw: any) => {
+      productoRows.forEach((raw) => {
         const loteRaw = asSingle(raw.lote);
         const tipoCenizarioRaw = asSingle(raw.tipo_cenizario);
         const item: ProductoDetalle = {
@@ -1647,10 +1707,7 @@ export default function DashboardContratosActivos() {
                       })();
                       const contractFolders = driveState.items.filter((driveItem) => driveItem.isFolder);
                       const contractFiles = driveState.items.filter((driveItem) => !driveItem.isFolder);
-                      const contractTitle =
-                        item.contrato.numero_formulario ||
-                        item.contrato.numero_contrato ||
-                        `Contrato ${item.contrato.id_contrato}`;
+                      const contractTitle = formatContractDisplayLabel(item.contrato);
                       const plazoContrato =
                         item.contrato.total_meses !== null && item.contrato.total_meses !== undefined
                           ? `${item.contrato.total_meses} meses`
@@ -1669,11 +1726,10 @@ export default function DashboardContratosActivos() {
                         item.contrato.cantidad_lotes !== null && item.contrato.cantidad_lotes !== undefined
                           ? String(item.contrato.cantidad_lotes)
                           : "No definido";
-                      const anioMantenimiento =
-                        item.contrato.anio_inicio_mantenimiento !== null &&
-                        item.contrato.anio_inicio_mantenimiento !== undefined
-                          ? String(item.contrato.anio_inicio_mantenimiento)
-                          : "No definido";
+                      const anioMantenimiento = formatMaintenanceStartDisplay(
+                        item.contrato.fecha_inicio_mantenimiento,
+                        item.contrato.anio_inicio_mantenimiento,
+                      );
 
                       return (
                         <article
@@ -1881,13 +1937,8 @@ export default function DashboardContratosActivos() {
                                   }
                                 />
                                 <DetailRow
-                                  label="Año inicio mantenimiento"
-                                  value={
-                                    item.contrato.anio_inicio_mantenimiento !== null &&
-                                    item.contrato.anio_inicio_mantenimiento !== undefined
-                                      ? String(item.contrato.anio_inicio_mantenimiento)
-                                      : "No definido"
-                                  }
+                                  label="Inicio mantenimiento"
+                                  value={anioMantenimiento}
                                 />
                                 <div className="rounded-md border border-border/60 bg-accent/10 px-3 py-2 md:col-span-2 xl:col-span-2">
                                   <p className="text-[11px] font-semibold uppercase tracking-wide text-text-secondary">
@@ -2239,7 +2290,7 @@ export default function DashboardContratosActivos() {
           <DialogHeader>
             <DialogTitle>Editar contrato</DialogTitle>
             <DialogDescription>
-              {editTarget?.contrato.numero_formulario || editTarget?.contrato.numero_contrato || "Contrato activo"}
+              {formatContractDisplayLabel(editTarget?.contrato, { fallback: "Formulario pendiente" })}
             </DialogDescription>
           </DialogHeader>
 
@@ -2469,7 +2520,7 @@ export default function DashboardContratosActivos() {
           <DialogHeader>
             <DialogTitle>Historial de cambios</DialogTitle>
             <DialogDescription>
-              {historyTarget?.contrato.numero_formulario || historyTarget?.contrato.numero_contrato || "Contrato activo"}
+              {formatContractDisplayLabel(historyTarget?.contrato, { fallback: "Formulario pendiente" })}
             </DialogDescription>
           </DialogHeader>
 

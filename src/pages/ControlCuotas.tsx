@@ -53,6 +53,10 @@ import {
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  formatContractDisplayLabel,
+  getContractSearchTokens,
+} from "@/lib/contract-display";
 import { cn } from "@/lib/utils";
 
 type ControlCuotasResumenRow =
@@ -96,6 +100,17 @@ type DetailState = {
   eventos: EventoFinancieroRow[];
 };
 
+type CobranzaAlert = {
+  idContrato: number;
+  clienteNombre: string;
+  numeroContrato: string;
+  numeroFormulario: string | null;
+  proximaFecha: string;
+  dias: number;
+  cuotasVencidas: number;
+  montoVencido: number;
+};
+
 const FILTER_LABELS: Record<FilterMode, string> = {
   vigentes: "Solo vigentes",
   "con-vencidas": "Con cuotas vencidas",
@@ -112,10 +127,28 @@ function formatCurrency(value: number | null | undefined): string {
   }).format(value ?? 0);
 }
 
+function parseCalendarDate(value: string | null | undefined): Date | null {
+  if (!value) return null;
+
+  const trimmed = value.trim();
+  const calendarDateMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(trimmed);
+  if (calendarDateMatch) {
+    const [, year, month, day] = calendarDateMatch;
+    return new Date(Number(year), Number(month) - 1, Number(day));
+  }
+
+  const parsed = new Date(trimmed);
+  if (Number.isNaN(parsed.getTime())) {
+    return null;
+  }
+
+  return parsed;
+}
+
 function formatDate(value: string | null | undefined): string {
   if (!value) return "No definida";
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return value;
+  const parsed = parseCalendarDate(value);
+  if (!parsed) return value;
   return parsed.toLocaleDateString("es-CR");
 }
 
@@ -149,6 +182,18 @@ function formatDateParts(year: number, month: number, day: number): string {
   )}`;
 }
 
+function getDaysUntilDate(value: string | null | undefined): number | null {
+  const parsed = parseCalendarDate(value);
+  if (!parsed) return null;
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  parsed.setHours(0, 0, 0, 0);
+
+  const diffMs = parsed.getTime() - today.getTime();
+  return Math.round(diffMs / 86400000);
+}
+
 function getTodayInputValue(): string {
   const today = new Date();
   return formatDateParts(
@@ -166,8 +211,8 @@ function getSuggestedFirstPaymentDate(
     return "";
   }
 
-  const parsed = new Date(fechaFirma);
-  if (Number.isNaN(parsed.getTime())) {
+  const parsed = parseCalendarDate(fechaFirma);
+  if (!parsed) {
     return "";
   }
 
@@ -468,9 +513,11 @@ export default function ControlCuotas() {
         const haystack = normalizeSearchValue(
           [
             row.cliente_nombre,
-            row.numero_contrato,
-            row.numero_formulario,
-            String(row.id_contrato ?? ""),
+            getContractSearchTokens({
+              numero_formulario: row.numero_formulario,
+              numero_contrato: row.numero_contrato,
+              id_contrato: row.id_contrato,
+            }),
           ].join(" "),
         );
         return haystack.includes(normalizedTerm);
@@ -481,12 +528,12 @@ export default function ControlCuotas() {
           Number((a.cuotas_vencidas ?? 0) > 0);
         if (overdueDelta !== 0) return overdueDelta;
 
-        const aTime = a.proxima_fecha_vencimiento
-          ? new Date(a.proxima_fecha_vencimiento).getTime()
-          : Number.MAX_SAFE_INTEGER;
-        const bTime = b.proxima_fecha_vencimiento
-          ? new Date(b.proxima_fecha_vencimiento).getTime()
-          : Number.MAX_SAFE_INTEGER;
+        const aTime =
+          parseCalendarDate(a.proxima_fecha_vencimiento)?.getTime() ??
+          Number.MAX_SAFE_INTEGER;
+        const bTime =
+          parseCalendarDate(b.proxima_fecha_vencimiento)?.getTime() ??
+          Number.MAX_SAFE_INTEGER;
         if (aTime !== bTime) return aTime - bTime;
         return (b.id_contrato ?? 0) - (a.id_contrato ?? 0);
       });
@@ -581,6 +628,112 @@ export default function ControlCuotas() {
       saldoCapital,
     };
   }, [filteredRows]);
+
+  const cobranzaAlerts = useMemo(() => {
+    const baseRows = rows.filter(
+      (row) =>
+        row.estado_contrato === "VIGENTE" &&
+        row.id_plan_pago !== null &&
+        row.id_contrato !== null &&
+        row.proxima_fecha_vencimiento,
+    );
+
+    const normalized = baseRows
+      .map((row) => {
+        const dias = getDaysUntilDate(row.proxima_fecha_vencimiento);
+        if (
+          dias === null ||
+          row.id_contrato === null ||
+          !row.proxima_fecha_vencimiento
+        ) {
+          return null;
+        }
+
+        return {
+          idContrato: row.id_contrato,
+          clienteNombre: row.cliente_nombre || "Cliente sin nombre",
+          numeroContrato: row.numero_contrato || "sin numero",
+          numeroFormulario: row.numero_formulario,
+          proximaFecha: row.proxima_fecha_vencimiento,
+          dias,
+          cuotasVencidas: row.cuotas_vencidas ?? 0,
+          montoVencido: row.monto_vencido ?? 0,
+        } satisfies CobranzaAlert;
+      })
+      .filter((alert): alert is CobranzaAlert => alert !== null);
+
+    const porVencer = normalized
+      .filter(
+        (alert) =>
+          alert.cuotasVencidas === 0 && alert.dias >= 1 && alert.dias <= 4,
+      )
+      .sort((a, b) => a.dias - b.dias || a.idContrato - b.idContrato);
+
+    const vencidos = normalized
+      .filter((alert) => alert.cuotasVencidas > 0 || alert.dias < 0)
+      .sort((a, b) => {
+        const overdueDaysA = a.dias < 0 ? Math.abs(a.dias) : 0;
+        const overdueDaysB = b.dias < 0 ? Math.abs(b.dias) : 0;
+        return (
+          overdueDaysB - overdueDaysA ||
+          b.cuotasVencidas - a.cuotasVencidas ||
+          a.idContrato - b.idContrato
+        );
+      });
+
+    return { porVencer, vencidos };
+  }, [rows]);
+
+  const selectedQuotaSummary = useMemo(() => {
+    return detail.cuotas.reduce(
+      (acc, cuota) => {
+        const displayState = getQuotaDisplayState(
+          cuota.estado,
+          cuota.fecha_vencimiento,
+        );
+
+        if (displayState === "PAGADA" || displayState === "ANULADA") {
+          return acc;
+        }
+
+        const capitalPendiente = Math.max(
+          (cuota.monto_capital_programado ?? 0) -
+            (cuota.monto_pagado_capital ?? 0),
+          0,
+        );
+        const interesPendiente = Math.max(
+          (cuota.monto_interes_programado ?? 0) -
+            (cuota.monto_pagado_interes ?? 0),
+          0,
+        );
+        const totalPendiente = Math.max(
+          (cuota.monto_cuota_total_programada ?? 0) -
+            (cuota.monto_pagado_total ?? 0),
+          0,
+        );
+
+        acc.capitalPendiente += capitalPendiente;
+        acc.interesPendiente += interesPendiente;
+        acc.totalPendiente += totalPendiente;
+
+        return acc;
+      },
+      {
+        capitalPendiente: 0,
+        interesPendiente: 0,
+        totalPendiente: 0,
+      },
+    );
+  }, [detail.cuotas]);
+
+  const pendingChargesTotal = useMemo(() => {
+    return detail.cargos.reduce((acc, cargo) => {
+      if (cargo.estado === "PAGADO" || cargo.estado === "ANULADO") {
+        return acc;
+      }
+      return acc + Math.max((cargo.monto_original ?? 0) - (cargo.monto_pagado ?? 0), 0);
+    }, 0);
+  }, [detail.cargos]);
 
   const refreshSelected = useCallback(async () => {
     await loadResumen();
@@ -839,6 +992,133 @@ export default function ControlCuotas() {
           />
         </div>
 
+        <Card className="border-border/70 bg-surface shadow-sm">
+          <CardHeader>
+            <CardTitle className="text-xl">Alertas de cobranza</CardTitle>
+            <CardDescription>
+              Contratos que requieren seguimiento por vencimiento proximo o por
+              atraso en sus cuotas.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Tabs defaultValue="por-vencer" className="w-full">
+              <TabsList className="grid w-full grid-cols-2">
+                <TabsTrigger value="por-vencer">
+                  Por vencer ({cobranzaAlerts.porVencer.length})
+                </TabsTrigger>
+                <TabsTrigger value="vencidos">
+                  Vencidos ({cobranzaAlerts.vencidos.length})
+                </TabsTrigger>
+              </TabsList>
+
+              <TabsContent value="por-vencer">
+                {cobranzaAlerts.porVencer.length === 0 ? (
+                  <EmptyPanel
+                    title="Sin contratos por vencer en 4 dias"
+                    description="No hay contratos vigentes con cuotas pendientes entre 1 y 4 dias."
+                  />
+                ) : (
+                  <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                    {cobranzaAlerts.porVencer.map((alert) => (
+                      <button
+                        key={`por-vencer-${alert.idContrato}`}
+                        type="button"
+                        onClick={() => setSelectedContractId(alert.idContrato)}
+                        className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-left transition hover:border-amber-300 hover:bg-amber-100/60"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <p className="font-semibold text-foreground">
+                              {alert.clienteNombre}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              {formatContractDisplayLabel(
+                                {
+                                  numero_formulario: alert.numeroFormulario,
+                                  numero_contrato: alert.numeroContrato,
+                                  id_contrato: alert.idContrato,
+                                },
+                                { fallback: "Formulario pendiente" },
+                              )}
+                            </p>
+                          </div>
+                          <Badge className="bg-amber-100 text-amber-900 hover:bg-amber-100">
+                            {alert.dias} {alert.dias === 1 ? "dia" : "dias"}
+                          </Badge>
+                        </div>
+                        <div className="mt-3 space-y-1 text-sm">
+                          <p className="text-foreground">
+                            Proxima cuota: {formatDate(alert.proximaFecha)}
+                          </p>
+                          <p className="text-muted-foreground">
+                            Requiere seguimiento preventivo de cobro.
+                          </p>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </TabsContent>
+
+              <TabsContent value="vencidos">
+                {cobranzaAlerts.vencidos.length === 0 ? (
+                  <EmptyPanel
+                    title="Sin contratos vencidos"
+                    description="No hay cuotas vencidas visibles en los contratos vigentes."
+                  />
+                ) : (
+                  <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                    {cobranzaAlerts.vencidos.map((alert) => (
+                      <button
+                        key={`vencido-${alert.idContrato}`}
+                        type="button"
+                        onClick={() => setSelectedContractId(alert.idContrato)}
+                        className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-left transition hover:border-rose-300 hover:bg-rose-100/60"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <p className="font-semibold text-foreground">
+                              {alert.clienteNombre}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              {formatContractDisplayLabel(
+                                {
+                                  numero_formulario: alert.numeroFormulario,
+                                  numero_contrato: alert.numeroContrato,
+                                  id_contrato: alert.idContrato,
+                                },
+                                { fallback: "Formulario pendiente" },
+                              )}
+                            </p>
+                          </div>
+                          <Badge className="bg-rose-100 text-rose-900 hover:bg-rose-100">
+                            {alert.cuotasVencidas} vencida
+                            {alert.cuotasVencidas === 1 ? "" : "s"}
+                          </Badge>
+                        </div>
+                        <div className="mt-3 space-y-1 text-sm">
+                          <p className="text-foreground">
+                            Proxima cuota pendiente: {formatDate(alert.proximaFecha)}
+                          </p>
+                          <p className="text-muted-foreground">
+                            Monto vencido: {formatCurrency(alert.montoVencido)}
+                          </p>
+                          {alert.dias < 0 && (
+                            <p className="text-rose-700">
+                              Atraso de {Math.abs(alert.dias)}{" "}
+                              {Math.abs(alert.dias) === 1 ? "dia" : "dias"}.
+                            </p>
+                          )}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </TabsContent>
+            </Tabs>
+          </CardContent>
+        </Card>
+
         <div className="grid gap-6 xl:grid-cols-[360px_minmax(0,1fr)]">
           <Card className="border-border/70 bg-surface shadow-sm">
             <CardHeader className="space-y-4">
@@ -910,10 +1190,9 @@ export default function ControlCuotas() {
                               {row.cliente_nombre || "Cliente sin nombre"}
                             </p>
                             <p className="text-xs text-muted-foreground">
-                              Contrato {row.numero_contrato || "sin numero"}
-                              {row.numero_formulario
-                                ? ` - Formulario ${row.numero_formulario}`
-                                : ""}
+                              {formatContractDisplayLabel(row, {
+                                fallback: "Formulario pendiente",
+                              })}
                             </p>
                           </div>
                           <div className="flex flex-wrap gap-2">
@@ -1024,10 +1303,9 @@ export default function ControlCuotas() {
                         </Badge>
                       </div>
                       <CardDescription className="text-sm">
-                        Contrato {selectedRow.numero_contrato || "sin numero"}
-                        {selectedRow.numero_formulario
-                          ? ` - Formulario ${selectedRow.numero_formulario}`
-                          : " - Sin formulario oficial"}
+                        {formatContractDisplayLabel(selectedRow, {
+                          fallback: "Formulario pendiente",
+                        })}
                       </CardDescription>
                     </div>
                     <div className="flex flex-wrap gap-2">
@@ -1052,13 +1330,38 @@ export default function ControlCuotas() {
                     </div>
                   </CardHeader>
                   <CardContent className="space-y-4">
-                    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
                       <div className="rounded-xl border border-border/70 bg-muted/20 p-4">
                         <p className="text-xs uppercase tracking-wide text-muted-foreground">
-                          Saldo capital
+                          Saldo capital pendiente
                         </p>
                         <p className="mt-1 text-xl font-semibold text-foreground">
-                          {formatCurrency(selectedRow.saldo_capital_pendiente)}
+                          {formatCurrency(selectedQuotaSummary.capitalPendiente)}
+                        </p>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          Principal pendiente de amortizar.
+                        </p>
+                      </div>
+                      <div className="rounded-xl border border-border/70 bg-muted/20 p-4">
+                        <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                          Interes pendiente
+                        </p>
+                        <p className="mt-1 text-xl font-semibold text-foreground">
+                          {formatCurrency(selectedQuotaSummary.interesPendiente)}
+                        </p>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          Interes restante dentro de las cuotas pendientes.
+                        </p>
+                      </div>
+                      <div className="rounded-xl border border-border/70 bg-muted/20 p-4">
+                        <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                          Total proyectado cuotas
+                        </p>
+                        <p className="mt-1 text-xl font-semibold text-foreground">
+                          {formatCurrency(selectedQuotaSummary.totalPendiente)}
+                        </p>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          Capital + interes pendiente de las cuotas del plan.
                         </p>
                       </div>
                       <div className="rounded-xl border border-border/70 bg-muted/20 p-4">
@@ -1068,6 +1371,9 @@ export default function ControlCuotas() {
                         <p className="mt-1 text-xl font-semibold text-foreground">
                           {formatCurrency(selectedRow.monto_vencido)}
                         </p>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          Solo cuotas ya vencidas al dia de hoy.
+                        </p>
                       </div>
                       <div className="rounded-xl border border-border/70 bg-muted/20 p-4">
                         <p className="text-xs uppercase tracking-wide text-muted-foreground">
@@ -1076,6 +1382,9 @@ export default function ControlCuotas() {
                         <p className="mt-1 text-xl font-semibold text-foreground">
                           {selectedRow.cuotas_pagadas ?? 0}/{selectedRow.cuotas_totales ?? 0}
                         </p>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          Cuotas liquidadas respecto al total del plan vigente.
+                        </p>
                       </div>
                       <div className="rounded-xl border border-border/70 bg-muted/20 p-4">
                         <p className="text-xs uppercase tracking-wide text-muted-foreground">
@@ -1083,6 +1392,20 @@ export default function ControlCuotas() {
                         </p>
                         <p className="mt-1 text-xl font-semibold text-foreground">
                           {formatDate(selectedRow.proxima_fecha_vencimiento)}
+                        </p>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          Fecha de la siguiente cuota con saldo pendiente.
+                        </p>
+                      </div>
+                      <div className="rounded-xl border border-border/70 bg-muted/20 p-4">
+                        <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                          Otros cargos pendientes
+                        </p>
+                        <p className="mt-1 text-xl font-semibold text-foreground">
+                          {formatCurrency(pendingChargesTotal)}
+                        </p>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          Mantenimientos, apertura u otros cargos fuera de cuotas.
                         </p>
                       </div>
                     </div>

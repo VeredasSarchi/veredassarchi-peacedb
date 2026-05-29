@@ -62,6 +62,7 @@ export type Database = {
           estado_contrato: Database["public"]["Enums"]["estado_contrato_enum"]
           fecha_anulacion: string | null
           fecha_firma: string | null
+          fecha_inicio_mantenimiento: string | null
           fecha_primera_cuota: string | null
           id_cliente: number
           id_contrato: number
@@ -90,6 +91,7 @@ export type Database = {
           estado_contrato?: Database["public"]["Enums"]["estado_contrato_enum"]
           fecha_anulacion?: string | null
           fecha_firma?: string | null
+          fecha_inicio_mantenimiento?: string | null
           fecha_primera_cuota?: string | null
           id_cliente: number
           id_contrato?: number
@@ -118,6 +120,7 @@ export type Database = {
           estado_contrato?: Database["public"]["Enums"]["estado_contrato_enum"]
           fecha_anulacion?: string | null
           fecha_firma?: string | null
+          fecha_inicio_mantenimiento?: string | null
           fecha_primera_cuota?: string | null
           id_cliente?: number
           id_contrato?: number
@@ -208,6 +211,20 @@ export type Database = {
             referencedRelation: "vw_control_cuotas_resumen"
             referencedColumns: ["id_contrato"]
           },
+          {
+            foreignKeyName: "contrato_anulacion_log_id_contrato_fkey"
+            columns: ["id_contrato"]
+            isOneToOne: false
+            referencedRelation: "vw_control_mantenimiento_cuotas"
+            referencedColumns: ["id_contrato"]
+          },
+          {
+            foreignKeyName: "contrato_anulacion_log_id_contrato_fkey"
+            columns: ["id_contrato"]
+            isOneToOne: false
+            referencedRelation: "vw_control_mantenimiento_resumen"
+            referencedColumns: ["id_contrato"]
+          },
         ]
       }
       contrato_autorizados: {
@@ -249,6 +266,20 @@ export type Database = {
             columns: ["id_contrato"]
             isOneToOne: false
             referencedRelation: "vw_control_cuotas_resumen"
+            referencedColumns: ["id_contrato"]
+          },
+          {
+            foreignKeyName: "fk_contrato_autorizado_contrato"
+            columns: ["id_contrato"]
+            isOneToOne: false
+            referencedRelation: "vw_control_mantenimiento_cuotas"
+            referencedColumns: ["id_contrato"]
+          },
+          {
+            foreignKeyName: "fk_contrato_autorizado_contrato"
+            columns: ["id_contrato"]
+            isOneToOne: false
+            referencedRelation: "vw_control_mantenimiento_resumen"
             referencedColumns: ["id_contrato"]
           },
         ]
@@ -295,6 +326,20 @@ export type Database = {
             columns: ["id_contrato"]
             isOneToOne: false
             referencedRelation: "vw_control_cuotas_resumen"
+            referencedColumns: ["id_contrato"]
+          },
+          {
+            foreignKeyName: "fk_contrato_beneficiario_contrato"
+            columns: ["id_contrato"]
+            isOneToOne: false
+            referencedRelation: "vw_control_mantenimiento_cuotas"
+            referencedColumns: ["id_contrato"]
+          },
+          {
+            foreignKeyName: "fk_contrato_beneficiario_contrato"
+            columns: ["id_contrato"]
+            isOneToOne: false
+            referencedRelation: "vw_control_mantenimiento_resumen"
             referencedColumns: ["id_contrato"]
           },
         ]
@@ -356,6 +401,20 @@ export type Database = {
             columns: ["id_contrato"]
             isOneToOne: false
             referencedRelation: "vw_control_cuotas_resumen"
+            referencedColumns: ["id_contrato"]
+          },
+          {
+            foreignKeyName: "contrato_cargo_id_contrato_fkey"
+            columns: ["id_contrato"]
+            isOneToOne: false
+            referencedRelation: "vw_control_mantenimiento_cuotas"
+            referencedColumns: ["id_contrato"]
+          },
+          {
+            foreignKeyName: "contrato_cargo_id_contrato_fkey"
+            columns: ["id_contrato"]
+            isOneToOne: false
+            referencedRelation: "vw_control_mantenimiento_resumen"
             referencedColumns: ["id_contrato"]
           },
           {
@@ -516,6 +575,20 @@ export type Database = {
             referencedRelation: "vw_control_cuotas_resumen"
             referencedColumns: ["id_contrato"]
           },
+          {
+            foreignKeyName: "contrato_edicion_log_id_contrato_fkey"
+            columns: ["id_contrato"]
+            isOneToOne: false
+            referencedRelation: "vw_control_mantenimiento_cuotas"
+            referencedColumns: ["id_contrato"]
+          },
+          {
+            foreignKeyName: "contrato_edicion_log_id_contrato_fkey"
+            columns: ["id_contrato"]
+            isOneToOne: false
+            referencedRelation: "vw_control_mantenimiento_resumen"
+            referencedColumns: ["id_contrato"]
+          },
         ]
       }
       contrato_evento_financiero: {
@@ -575,6 +648,20 @@ export type Database = {
             referencedColumns: ["id_contrato"]
           },
           {
+            foreignKeyName: "contrato_evento_financiero_id_contrato_fkey"
+            columns: ["id_contrato"]
+            isOneToOne: false
+            referencedRelation: "vw_control_mantenimiento_cuotas"
+            referencedColumns: ["id_contrato"]
+          },
+          {
+            foreignKeyName: "contrato_evento_financiero_id_contrato_fkey"
+            columns: ["id_contrato"]
+            isOneToOne: false
+            referencedRelation: "vw_control_mantenimiento_resumen"
+            referencedColumns: ["id_contrato"]
+          },
+          {
             foreignKeyName: "contrato_evento_financiero_id_plan_origen_fkey"
             columns: ["id_plan_origen"]
             isOneToOne: false
@@ -615,6 +702,208 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "vw_control_cuotas_resumen"
             referencedColumns: ["id_plan_pago"]
+          },
+        ]
+      }
+      contrato_mantenimiento_cuota: {
+        Row: {
+          created_at: string
+          estado: string
+          fecha_fin_periodo: string
+          fecha_inicio_periodo: string
+          fecha_ultimo_pago: string | null
+          fecha_vencimiento: string
+          id_contrato: number
+          id_cuota_mantenimiento: number
+          monto_pagado: number
+          monto_programado: number
+          notas: string | null
+          numero_periodo: number
+        }
+        Insert: {
+          created_at?: string
+          estado?: string
+          fecha_fin_periodo: string
+          fecha_inicio_periodo: string
+          fecha_ultimo_pago?: string | null
+          fecha_vencimiento: string
+          id_contrato: number
+          id_cuota_mantenimiento?: number
+          monto_pagado?: number
+          monto_programado: number
+          notas?: string | null
+          numero_periodo: number
+        }
+        Update: {
+          created_at?: string
+          estado?: string
+          fecha_fin_periodo?: string
+          fecha_inicio_periodo?: string
+          fecha_ultimo_pago?: string | null
+          fecha_vencimiento?: string
+          id_contrato?: number
+          id_cuota_mantenimiento?: number
+          monto_pagado?: number
+          monto_programado?: number
+          notas?: string | null
+          numero_periodo?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "contrato_mantenimiento_cuota_id_contrato_fkey"
+            columns: ["id_contrato"]
+            isOneToOne: false
+            referencedRelation: "contrato"
+            referencedColumns: ["id_contrato"]
+          },
+          {
+            foreignKeyName: "contrato_mantenimiento_cuota_id_contrato_fkey"
+            columns: ["id_contrato"]
+            isOneToOne: false
+            referencedRelation: "vw_control_cuotas_plan_vigente"
+            referencedColumns: ["id_contrato"]
+          },
+          {
+            foreignKeyName: "contrato_mantenimiento_cuota_id_contrato_fkey"
+            columns: ["id_contrato"]
+            isOneToOne: false
+            referencedRelation: "vw_control_cuotas_resumen"
+            referencedColumns: ["id_contrato"]
+          },
+          {
+            foreignKeyName: "contrato_mantenimiento_cuota_id_contrato_fkey"
+            columns: ["id_contrato"]
+            isOneToOne: false
+            referencedRelation: "vw_control_mantenimiento_cuotas"
+            referencedColumns: ["id_contrato"]
+          },
+          {
+            foreignKeyName: "contrato_mantenimiento_cuota_id_contrato_fkey"
+            columns: ["id_contrato"]
+            isOneToOne: false
+            referencedRelation: "vw_control_mantenimiento_resumen"
+            referencedColumns: ["id_contrato"]
+          },
+        ]
+      }
+      contrato_mantenimiento_pago: {
+        Row: {
+          created_at: string
+          estado: string
+          fecha_pago: string
+          id_contrato: number
+          id_pago_mantenimiento: number
+          metodo_pago: string | null
+          monto_total: number
+          observacion: string | null
+          referencia: string | null
+          registrado_por: string | null
+        }
+        Insert: {
+          created_at?: string
+          estado?: string
+          fecha_pago: string
+          id_contrato: number
+          id_pago_mantenimiento?: number
+          metodo_pago?: string | null
+          monto_total: number
+          observacion?: string | null
+          referencia?: string | null
+          registrado_por?: string | null
+        }
+        Update: {
+          created_at?: string
+          estado?: string
+          fecha_pago?: string
+          id_contrato?: number
+          id_pago_mantenimiento?: number
+          metodo_pago?: string | null
+          monto_total?: number
+          observacion?: string | null
+          referencia?: string | null
+          registrado_por?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "contrato_mantenimiento_pago_id_contrato_fkey"
+            columns: ["id_contrato"]
+            isOneToOne: false
+            referencedRelation: "contrato"
+            referencedColumns: ["id_contrato"]
+          },
+          {
+            foreignKeyName: "contrato_mantenimiento_pago_id_contrato_fkey"
+            columns: ["id_contrato"]
+            isOneToOne: false
+            referencedRelation: "vw_control_cuotas_plan_vigente"
+            referencedColumns: ["id_contrato"]
+          },
+          {
+            foreignKeyName: "contrato_mantenimiento_pago_id_contrato_fkey"
+            columns: ["id_contrato"]
+            isOneToOne: false
+            referencedRelation: "vw_control_cuotas_resumen"
+            referencedColumns: ["id_contrato"]
+          },
+          {
+            foreignKeyName: "contrato_mantenimiento_pago_id_contrato_fkey"
+            columns: ["id_contrato"]
+            isOneToOne: false
+            referencedRelation: "vw_control_mantenimiento_cuotas"
+            referencedColumns: ["id_contrato"]
+          },
+          {
+            foreignKeyName: "contrato_mantenimiento_pago_id_contrato_fkey"
+            columns: ["id_contrato"]
+            isOneToOne: false
+            referencedRelation: "vw_control_mantenimiento_resumen"
+            referencedColumns: ["id_contrato"]
+          },
+        ]
+      }
+      contrato_mantenimiento_pago_aplicacion: {
+        Row: {
+          id_aplicacion_mantenimiento: number
+          id_cuota_mantenimiento: number
+          id_pago_mantenimiento: number
+          monto_aplicado: number
+          notas: string | null
+        }
+        Insert: {
+          id_aplicacion_mantenimiento?: number
+          id_cuota_mantenimiento: number
+          id_pago_mantenimiento: number
+          monto_aplicado: number
+          notas?: string | null
+        }
+        Update: {
+          id_aplicacion_mantenimiento?: number
+          id_cuota_mantenimiento?: number
+          id_pago_mantenimiento?: number
+          monto_aplicado?: number
+          notas?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "contrato_mantenimiento_pago_aplicac_id_cuota_mantenimiento_fkey"
+            columns: ["id_cuota_mantenimiento"]
+            isOneToOne: false
+            referencedRelation: "contrato_mantenimiento_cuota"
+            referencedColumns: ["id_cuota_mantenimiento"]
+          },
+          {
+            foreignKeyName: "contrato_mantenimiento_pago_aplicac_id_cuota_mantenimiento_fkey"
+            columns: ["id_cuota_mantenimiento"]
+            isOneToOne: false
+            referencedRelation: "vw_control_mantenimiento_cuotas"
+            referencedColumns: ["id_cuota_mantenimiento"]
+          },
+          {
+            foreignKeyName: "contrato_mantenimiento_pago_aplicaci_id_pago_mantenimiento_fkey"
+            columns: ["id_pago_mantenimiento"]
+            isOneToOne: false
+            referencedRelation: "contrato_mantenimiento_pago"
+            referencedColumns: ["id_pago_mantenimiento"]
           },
         ]
       }
@@ -687,6 +976,20 @@ export type Database = {
             columns: ["id_contrato"]
             isOneToOne: false
             referencedRelation: "vw_control_cuotas_resumen"
+            referencedColumns: ["id_contrato"]
+          },
+          {
+            foreignKeyName: "contrato_pago_id_contrato_fkey"
+            columns: ["id_contrato"]
+            isOneToOne: false
+            referencedRelation: "vw_control_mantenimiento_cuotas"
+            referencedColumns: ["id_contrato"]
+          },
+          {
+            foreignKeyName: "contrato_pago_id_contrato_fkey"
+            columns: ["id_contrato"]
+            isOneToOne: false
+            referencedRelation: "vw_control_mantenimiento_resumen"
             referencedColumns: ["id_contrato"]
           },
         ]
@@ -840,6 +1143,20 @@ export type Database = {
             referencedColumns: ["id_contrato"]
           },
           {
+            foreignKeyName: "contrato_plan_pago_id_contrato_fkey"
+            columns: ["id_contrato"]
+            isOneToOne: false
+            referencedRelation: "vw_control_mantenimiento_cuotas"
+            referencedColumns: ["id_contrato"]
+          },
+          {
+            foreignKeyName: "contrato_plan_pago_id_contrato_fkey"
+            columns: ["id_contrato"]
+            isOneToOne: false
+            referencedRelation: "vw_control_mantenimiento_resumen"
+            referencedColumns: ["id_contrato"]
+          },
+          {
             foreignKeyName: "contrato_plan_pago_id_plan_anterior_fkey"
             columns: ["id_plan_anterior"]
             isOneToOne: false
@@ -923,6 +1240,20 @@ export type Database = {
             columns: ["id_contrato"]
             isOneToOne: false
             referencedRelation: "vw_control_cuotas_resumen"
+            referencedColumns: ["id_contrato"]
+          },
+          {
+            foreignKeyName: "fk_contrato_producto_contrato"
+            columns: ["id_contrato"]
+            isOneToOne: false
+            referencedRelation: "vw_control_mantenimiento_cuotas"
+            referencedColumns: ["id_contrato"]
+          },
+          {
+            foreignKeyName: "fk_contrato_producto_contrato"
+            columns: ["id_contrato"]
+            isOneToOne: false
+            referencedRelation: "vw_control_mantenimiento_resumen"
             referencedColumns: ["id_contrato"]
           },
           {
@@ -1250,6 +1581,63 @@ export type Database = {
           },
         ]
       }
+      vw_control_mantenimiento_cuotas: {
+        Row: {
+          cliente_nombre: string | null
+          estado: string | null
+          estado_contrato:
+            | Database["public"]["Enums"]["estado_contrato_enum"]
+            | null
+          fecha_fin_periodo: string | null
+          fecha_inicio_mantenimiento: string | null
+          fecha_inicio_periodo: string | null
+          fecha_ultimo_pago: string | null
+          fecha_vencimiento: string | null
+          id_contrato: number | null
+          id_cuota_mantenimiento: number | null
+          monto_mantenimiento_anual: number | null
+          monto_pagado: number | null
+          monto_programado: number | null
+          notas: string | null
+          numero_contrato: string | null
+          numero_formulario: string | null
+          numero_periodo: number | null
+        }
+        Relationships: []
+      }
+      vw_control_mantenimiento_resumen: {
+        Row: {
+          cliente_nombre: string | null
+          configuracion_completa: boolean | null
+          cuotas_pagadas: number | null
+          cuotas_parciales: number | null
+          cuotas_totales: number | null
+          cuotas_vencidas: number | null
+          estado_contrato:
+            | Database["public"]["Enums"]["estado_contrato_enum"]
+            | null
+          fecha_firma: string | null
+          fecha_inicio_mantenimiento: string | null
+          id_cliente: number | null
+          id_contrato: number | null
+          monto_mantenimiento_anual: number | null
+          monto_vencido: number | null
+          numero_contrato: string | null
+          numero_formulario: string | null
+          proxima_fecha_vencimiento: string | null
+          total_pendiente: number | null
+          ultimo_periodo_cubierto_hasta: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fk_contrato_cliente"
+            columns: ["id_cliente"]
+            isOneToOne: false
+            referencedRelation: "cliente"
+            referencedColumns: ["id_cliente"]
+          },
+        ]
+      }
     }
     Functions: {
       anular_contrato: {
@@ -1319,6 +1707,18 @@ export type Database = {
         }
         Returns: Json
       }
+      registrar_pago_mantenimiento: {
+        Args: {
+          p_fecha_pago?: string
+          p_id_contrato: number
+          p_metodo_pago?: string
+          p_monto_total: number
+          p_observacion?: string
+          p_referencia?: string
+          p_usuario?: string
+        }
+        Returns: Json
+      }
       registrar_sync_anulacion_onedrive: {
         Args: {
           p_error?: string
@@ -1327,6 +1727,22 @@ export type Database = {
           p_usuario?: string
         }
         Returns: Json
+      }
+      sincronizar_cuotas_mantenimiento_contrato: {
+        Args: {
+          p_hasta_fecha?: string
+          p_id_contrato: number
+          p_usuario?: string
+        }
+        Returns: Json
+      }
+      sincronizar_cuotas_mantenimiento_vigentes: {
+        Args: { p_usuario?: string }
+        Returns: Json
+      }
+      sumar_meses_respetando_dia: {
+        Args: { p_fecha_base: string; p_meses: number }
+        Returns: string
       }
     }
     Enums: {
