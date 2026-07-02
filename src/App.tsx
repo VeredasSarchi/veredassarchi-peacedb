@@ -13,6 +13,7 @@ import DashboardContratosActivos from "@/pages/DashboardContratosActivos";
 import DashboardContratosAnulados from "@/pages/DashboardContratosAnulados";
 import ControlCuotas from "@/pages/ControlCuotas";
 import ControlMantenimiento from "@/pages/ControlMantenimiento";
+import IngresosCampoSanto from "@/pages/IngresosCampoSanto";
 import PaquetesFunerarios from "@/pages/PaquetesFunerarios";
 import Cremaciones from "@/pages/Cremaciones";
 import Jardines from "@/pages/Jardines";
@@ -113,6 +114,15 @@ function AppLayout() {
             element={
               <ProtectedRoute allowedRoles={["admin"]}>
                 <ControlMantenimiento />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/ingresos-campo-santo"
+            element={
+              <ProtectedRoute allowedRoles={["admin"]}>
+                <IngresosCampoSanto />
               </ProtectedRoute>
             }
           />
