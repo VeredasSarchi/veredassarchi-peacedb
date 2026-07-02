@@ -82,8 +82,9 @@ const AdminHome = () => {
               title: "Ingresos Campo Santo",
               description: "Resumen de ingresos, cobros y flujo de caja.",
               icon: Banknote,
+              action: () => navigate("/ingresos-campo-santo"),
               actionLabel: "Acceder",
-              disabled: true,
+              disabled: false,
             },
             {
               title: "Control de cuotas",

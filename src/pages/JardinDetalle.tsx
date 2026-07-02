@@ -39,7 +39,7 @@ type LoteEspacio = Omit<Tables<"lote_espacio">, "estado"> & {
   estado: "DISPONIBLE" | "OCUPADO";
 };
 
-type LoteStatus = "available" | "precontract" | "contract" | "occupant" | "familiar";
+type LoteStatus = "available" | "precontract" | "contract" | "occupant";
 type CenizarioStatus = "available" | "precontract" | "contract";
 
 function isFormalizedContractState(estado: string | null | undefined): boolean {
@@ -67,7 +67,6 @@ const STATUS_LABELS: Record<LoteStatus, string> = {
   precontract: "Pre-contrato",
   contract: "Vendido",
   occupant: "Ocupante registrado",
-  familiar: "Familiar",
 };
 
 const STATUS_STYLES: Record<LoteStatus, string> = {
@@ -75,7 +74,6 @@ const STATUS_STYLES: Record<LoteStatus, string> = {
   precontract: "bg-warning text-warning-foreground",
   contract: "bg-destructive text-destructive-foreground",
   occupant: "bg-secondary-soft text-text-primary",
-  familiar: "bg-accent text-accent-foreground",
 };
 
 const CENIZARIO_STYLES: Record<CenizarioStatus, string> = {
@@ -373,7 +371,6 @@ export default function JardinDetalle() {
         "precontract",
         "contract",
         "occupant",
-        "familiar",
       ];
       return Array.from({ length: rows * cols }, (_, index) => {
         const row = Math.floor(index / cols) + 1;
@@ -385,7 +382,7 @@ export default function JardinDetalle() {
           status,
           row,
           idLote: 0,
-          isFamiliar: status === "familiar",
+          isFamiliar: index % demoStatuses.length === 0,
         };
       });
     }
@@ -409,8 +406,6 @@ export default function JardinDetalle() {
         status = "precontract";
       } else if (hasOccupant) {
         status = "occupant";
-      } else if (isFamiliar) {
-        status = "familiar";
       }
 
       return {
@@ -458,7 +453,7 @@ export default function JardinDetalle() {
         acc[lote.status] += 1;
         return acc;
       },
-      { available: 0, precontract: 0, contract: 0, occupant: 0, familiar: 0 }
+      { available: 0, precontract: 0, contract: 0, occupant: 0 }
     );
   }, [lotesDisplay]);
 
@@ -814,7 +809,7 @@ export default function JardinDetalle() {
                     </div>
                     <div className="flex items-center gap-2">
                       <span className="h-3 w-3 rounded-full bg-accent" />
-                      Familiar ({counts.familiar})
+                      Familiar: marcado con F
                     </div>
                   </div>
 
@@ -847,7 +842,7 @@ export default function JardinDetalle() {
                                   title={`${lote.label} - ${STATUS_LABELS[lote.status]}`}
                                 >
                                   {lote.label}
-                                  {lote.isFamiliar && lote.status !== "familiar" && (
+                                  {lote.isFamiliar && (
                                     <span className="absolute top-1 right-1 rounded-full bg-accent px-1 text-[9px] font-bold text-accent-foreground">
                                       F
                                     </span>
@@ -860,7 +855,7 @@ export default function JardinDetalle() {
                                   title={`${lote.label} - ${STATUS_LABELS[lote.status]}`}
                                 >
                                   {lote.label}
-                                  {lote.isFamiliar && lote.status !== "familiar" && (
+                                  {lote.isFamiliar && (
                                     <span className="absolute top-1 right-1 rounded-full bg-accent px-1 text-[9px] font-bold text-accent-foreground">
                                       F
                                     </span>

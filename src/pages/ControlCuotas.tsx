@@ -8,6 +8,7 @@ import {
   CheckCircle2,
   CreditCard,
   DollarSign,
+  FileSpreadsheet,
   FileText,
   History,
   Loader2,
@@ -57,6 +58,11 @@ import {
   formatContractDisplayLabel,
   getContractSearchTokens,
 } from "@/lib/contract-display";
+import {
+  exportExcelReport,
+  type ReportColumn,
+  type ReportPayload,
+} from "@/lib/report-export";
 import { cn } from "@/lib/utils";
 
 type ControlCuotasResumenRow =
@@ -74,6 +80,8 @@ type FilterMode =
   | "con-plan"
   | "sin-plan"
   | "todos";
+
+type FinancialDetailTab = "cuotas" | "pagos" | "cargos" | "historial";
 
 type PaymentFormState = {
   montoTotal: string;
@@ -109,6 +117,13 @@ type CobranzaAlert = {
   dias: number;
   cuotasVencidas: number;
   montoVencido: number;
+};
+
+type JsonRecord = { [key: string]: Json | undefined };
+
+type EventDetailItem = {
+  label: string;
+  value: string;
 };
 
 const FILTER_LABELS: Record<FilterMode, string> = {
@@ -304,8 +319,185 @@ function getInitialPaymentForm(): PaymentFormState {
   };
 }
 
-function formatPayload(payload: Json): string {
-  return JSON.stringify(payload, null, 2);
+function asRecord(value: Json | undefined): JsonRecord | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+
+  return value as JsonRecord;
+}
+
+function getTextDetail(record: JsonRecord | null, key: string): string | null {
+  const value = record?.[key];
+  if (typeof value === "string" && value.trim()) {
+    return value.trim();
+  }
+  if (typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+  return null;
+}
+
+function getNumberDetail(record: JsonRecord | null, key: string): number | null {
+  const value = record?.[key];
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === "string") {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
+
+function formatTechnicalLabel(key: string): string {
+  const labels: Record<string, string> = {
+    monto_total: "Monto total",
+    monto_aplicado: "Monto aplicado",
+    saldo_capital_reestructurado: "Saldo reestructurado",
+    plazo_meses: "Plazo",
+    cuota_base: "Cuota base",
+    tasa_interes_anual: "Tasa de interes anual",
+    fecha_primera_cuota: "Primera cuota",
+    numero_formulario: "Formulario",
+    tipo_plan: "Tipo de plan",
+  };
+
+  return (
+    labels[key] ??
+    key
+      .replace(/^id_/, "")
+      .replace(/_/g, " ")
+      .replace(/\b\w/g, (letter) => letter.toUpperCase())
+  );
+}
+
+function formatGenericValue(key: string, value: Json | undefined): string | null {
+  if (value === null || value === undefined) return null;
+
+  if (typeof value === "number") {
+    if (key.includes("monto") || key.includes("saldo") || key.includes("cuota_base")) {
+      return formatCurrency(value);
+    }
+    if (key.includes("tasa")) {
+      return formatPercent(value);
+    }
+    if (key.includes("plazo")) {
+      return `${value} meses`;
+    }
+    if (key.startsWith("id_")) {
+      return `#${value}`;
+    }
+    return String(value);
+  }
+
+  if (typeof value === "string") {
+    if (key.includes("fecha")) {
+      return formatDate(value);
+    }
+    return value;
+  }
+
+  if (typeof value === "boolean") {
+    return value ? "Si" : "No";
+  }
+
+  return null;
+}
+
+function isOperationalHiddenEventKey(key: string): boolean {
+  return (
+    key === "resultado_plan" ||
+    key === "ok" ||
+    key === "version" ||
+    key === "cuotas_generadas" ||
+    key.startsWith("id_")
+  );
+}
+
+function buildGenericDetails(record: JsonRecord | null): EventDetailItem[] {
+  if (!record) return [];
+
+  return Object.entries(record).flatMap(([key, value]) => {
+    if (isOperationalHiddenEventKey(key)) return [];
+    const formatted = formatGenericValue(key, value);
+    return formatted ? [{ label: formatTechnicalLabel(key), value: formatted }] : [];
+  });
+}
+
+function buildEventDetails(event: EventoFinancieroRow): EventDetailItem[] {
+  const payload = asRecord(event.payload);
+  const resultadoPlan = asRecord(payload?.resultado_plan);
+  const details: EventDetailItem[] = [];
+
+  if (event.tipo_evento === "FORMALIZACION") {
+    const numeroFormulario = getTextDetail(payload, "numero_formulario");
+    const fechaPrimeraCuota = getTextDetail(payload, "fecha_primera_cuota");
+    const tipoPlan = getTextDetail(resultadoPlan, "tipo_plan");
+    const plazoMeses = getNumberDetail(resultadoPlan, "plazo_meses");
+
+    if (numeroFormulario) details.push({ label: "Formulario oficial", value: numeroFormulario });
+    if (fechaPrimeraCuota) details.push({ label: "Primera cuota", value: formatDate(fechaPrimeraCuota) });
+    if (tipoPlan) details.push({ label: "Tipo de plan", value: getPlanTypeLabel(tipoPlan) });
+    if (plazoMeses !== null) details.push({ label: "Plazo", value: `${plazoMeses} meses` });
+
+    return details;
+  }
+
+  if (event.tipo_evento === "BACKFILL") {
+    const fechaPrimeraCuota = getTextDetail(payload, "fecha_primera_cuota");
+    const tipoPlan = getTextDetail(resultadoPlan, "tipo_plan");
+    const plazoMeses = getNumberDetail(resultadoPlan, "plazo_meses");
+
+    if (fechaPrimeraCuota) details.push({ label: "Primera cuota", value: formatDate(fechaPrimeraCuota) });
+    if (tipoPlan) details.push({ label: "Tipo de plan", value: getPlanTypeLabel(tipoPlan) });
+    if (plazoMeses !== null) details.push({ label: "Plazo", value: `${plazoMeses} meses` });
+
+    return details;
+  }
+
+  if (event.tipo_evento === "REGISTRO_PAGO") {
+    const montoTotal = getNumberDetail(payload, "monto_total");
+    const montoAplicado = getNumberDetail(payload, "monto_aplicado");
+
+    if (montoTotal !== null) details.push({ label: "Monto total", value: formatCurrency(montoTotal) });
+    if (montoAplicado !== null) details.push({ label: "Monto aplicado", value: formatCurrency(montoAplicado) });
+
+    return details;
+  }
+
+  if (event.tipo_evento === "ARREGLO_PAGO" || event.tipo_evento === "REESTRUCTURACION") {
+    const saldo = getNumberDetail(payload, "saldo_capital_reestructurado");
+    const plazoMeses = getNumberDetail(payload, "plazo_meses");
+    const cuotaBase = getNumberDetail(payload, "cuota_base");
+    const tasa = getNumberDetail(payload, "tasa_interes_anual");
+    const fechaPrimeraCuota = getTextDetail(payload, "fecha_primera_cuota");
+
+    if (saldo !== null) details.push({ label: "Saldo reestructurado", value: formatCurrency(saldo) });
+    if (cuotaBase !== null) details.push({ label: "Nueva cuota", value: formatCurrency(cuotaBase) });
+    if (plazoMeses !== null) details.push({ label: "Nuevo plazo", value: `${plazoMeses} meses` });
+    if (tasa !== null) details.push({ label: "Tasa anual", value: formatPercent(tasa) });
+    if (fechaPrimeraCuota) details.push({ label: "Primera cuota", value: formatDate(fechaPrimeraCuota) });
+
+    return details;
+  }
+
+  return buildGenericDetails(payload);
+}
+
+function getEventTypeLabel(type: string): string {
+  const labels: Record<string, string> = {
+    FORMALIZACION: "Formalizacion",
+    BACKFILL: "Plan generado",
+    ARREGLO_PAGO: "Arreglo de pago",
+    REESTRUCTURACION: "Reestructuracion",
+    CONGELAMIENTO: "Congelamiento",
+    REGISTRO_PAGO: "Pago registrado",
+    ANULACION_PAGO: "Pago anulado",
+    AJUSTE_MANUAL: "Ajuste manual",
+  };
+
+  return labels[type] ?? formatTechnicalLabel(type.toLowerCase());
 }
 
 function SummaryMetricCard({
@@ -364,6 +556,8 @@ export default function ControlCuotas() {
   const [detailLoading, setDetailLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [filterMode, setFilterMode] = useState<FilterMode>("vigentes");
+  const [selectedDetailTab, setSelectedDetailTab] =
+    useState<FinancialDetailTab>("cuotas");
   const [backfillOpen, setBackfillOpen] = useState(false);
   const [backfillDate, setBackfillDate] = useState("");
   const [paymentOpen, setPaymentOpen] = useState(false);
@@ -381,6 +575,7 @@ export default function ControlCuotas() {
   const [submittingAction, setSubmittingAction] = useState<
     "backfill" | "payment" | "arrangement" | null
   >(null);
+  const [exportingExcel, setExportingExcel] = useState(false);
 
   const loadResumen = useCallback(async () => {
     setLoading(true);
@@ -741,6 +936,434 @@ export default function ControlCuotas() {
       await loadDetail(selectedContractId);
     }
   }, [loadDetail, loadResumen, selectedContractId]);
+
+  const exportSelectedFinancialDetail = useCallback(async () => {
+    if (!selectedRow) return;
+
+    const rowCountByTab: Record<FinancialDetailTab, number> = {
+      cuotas: detail.cuotas.length,
+      pagos: detail.pagos.length,
+      cargos: detail.cargos.length,
+      historial: detail.eventos.length,
+    };
+
+    if (rowCountByTab[selectedDetailTab] === 0) {
+      toast.error("No hay datos para exportar en esta pestaña");
+      return;
+    }
+
+    setExportingExcel(true);
+    try {
+      const contractLabel = formatContractDisplayLabel(selectedRow, {
+        fallback: "Formulario pendiente",
+      });
+      const baseFilters = [
+        { label: "Contrato", value: contractLabel },
+        {
+          label: "Cliente",
+          value: selectedRow.cliente_nombre || "Cliente sin nombre",
+        },
+        { label: "Filtro de lista", value: FILTER_LABELS[filterMode] },
+        { label: "Busqueda", value: searchTerm.trim() || "Sin busqueda" },
+      ];
+
+      if (selectedDetailTab === "cuotas") {
+        const columns: ReportColumn<ControlCuotasPlanRow>[] = [
+          {
+            id: "numero",
+            header: "#",
+            getValue: (row) => Number(row.numero_cuota ?? 0),
+            type: "number",
+            align: "right",
+          },
+          {
+            id: "vencimiento",
+            header: "Vencimiento",
+            getValue: (row) => parseCalendarDate(row.fecha_vencimiento),
+            formatValue: (_value, row) => formatDate(row.fecha_vencimiento),
+            type: "date",
+          },
+          {
+            id: "estado",
+            header: "Estado",
+            getValue: (row) =>
+              getQuotaDisplayState(row.estado, row.fecha_vencimiento),
+            type: "text",
+          },
+          {
+            id: "cuota",
+            header: "Cuota",
+            getValue: (row) => Number(row.monto_cuota_total_programada ?? 0),
+            formatValue: (value) => formatCurrency(Number(value ?? 0)),
+            type: "currency",
+            align: "right",
+            total: "sum",
+          },
+          {
+            id: "interes",
+            header: "Interes",
+            getValue: (row) => Number(row.monto_interes_programado ?? 0),
+            formatValue: (value) => formatCurrency(Number(value ?? 0)),
+            type: "currency",
+            align: "right",
+            total: "sum",
+          },
+          {
+            id: "capital",
+            header: "Capital",
+            getValue: (row) => Number(row.monto_capital_programado ?? 0),
+            formatValue: (value) => formatCurrency(Number(value ?? 0)),
+            type: "currency",
+            align: "right",
+            total: "sum",
+          },
+          {
+            id: "pagado",
+            header: "Pagado",
+            getValue: (row) => Number(row.monto_pagado_total ?? 0),
+            formatValue: (value) => formatCurrency(Number(value ?? 0)),
+            type: "currency",
+            align: "right",
+            total: "sum",
+          },
+          {
+            id: "saldo_final",
+            header: "Saldo final",
+            getValue: (row) => Number(row.saldo_final_programado ?? 0),
+            formatValue: (value) => formatCurrency(Number(value ?? 0)),
+            type: "currency",
+            align: "right",
+            total: "sum",
+          },
+          {
+            id: "factura",
+            header: "Factura",
+            getValue: (row) => row.numero_factura || "-",
+            type: "text",
+          },
+        ];
+
+        await exportExcelReport({
+          systemName: "Veredas Sarchi - Poas",
+          title: `Cuotas del plan - ${selectedRow.cliente_nombre || "Cliente"}`,
+          sheetName: "Cuotas",
+          fileBaseName: "Control_Cuotas_Cuotas",
+          generatedAt: new Date(),
+          generatedBy: user?.email ?? role ?? "No disponible",
+          filters: baseFilters,
+          columns,
+          rows: detail.cuotas,
+        } satisfies ReportPayload<ControlCuotasPlanRow>);
+      } else if (selectedDetailTab === "pagos") {
+        type PaymentExportRow = PagoRow & {
+          totalInteres: number;
+          totalCapital: number;
+          totalOtros: number;
+          aplicacionesTexto: string;
+        };
+
+        const paymentRows: PaymentExportRow[] = detail.pagos.map((pago) => {
+          const aplicaciones = quotasByPaymentId.get(pago.id_pago) ?? [];
+          const totalInteres = aplicaciones.reduce(
+            (acc, app) => acc + (app.monto_interes ?? 0),
+            0,
+          );
+          const totalCapital = aplicaciones.reduce(
+            (acc, app) => acc + (app.monto_capital ?? 0),
+            0,
+          );
+          const totalOtros = aplicaciones.reduce(
+            (acc, app) => acc + (app.monto_otros ?? 0),
+            0,
+          );
+          const aplicacionesTexto =
+            aplicaciones
+              .map((application) => {
+                const cuota =
+                  application.id_cuota !== null
+                    ? quotaById.get(application.id_cuota)
+                    : undefined;
+                const cargo =
+                  application.id_cargo !== null
+                    ? cargoById.get(application.id_cargo)
+                    : undefined;
+                const label = cuota
+                  ? `Cuota ${cuota.numero_cuota}`
+                  : cargo
+                    ? cargo.descripcion || cargo.tipo_cargo
+                    : "Aplicacion";
+                return `${label}: Int. ${formatCurrency(
+                  application.monto_interes,
+                )} | Cap. ${formatCurrency(
+                  application.monto_capital,
+                )} | Otros ${formatCurrency(application.monto_otros)}`;
+              })
+              .join(" | ") || "Sin detalle de aplicaciones";
+
+          return {
+            ...pago,
+            totalInteres,
+            totalCapital,
+            totalOtros,
+            aplicacionesTexto,
+          };
+        });
+
+        const columns: ReportColumn<PaymentExportRow>[] = [
+          {
+            id: "pago",
+            header: "Pago",
+            getValue: (row) => `Pago #${row.id_pago}`,
+            type: "text",
+          },
+          {
+            id: "estado",
+            header: "Estado",
+            getValue: (row) => row.estado,
+            type: "text",
+          },
+          {
+            id: "fecha",
+            header: "Fecha",
+            getValue: (row) => formatDateTime(row.fecha_pago),
+            type: "text",
+          },
+          {
+            id: "metodo",
+            header: "Metodo",
+            getValue: (row) => row.metodo_pago || "",
+            type: "text",
+          },
+          {
+            id: "factura",
+            header: "Factura",
+            getValue: (row) => row.numero_factura || "",
+            type: "text",
+          },
+          {
+            id: "monto_total",
+            header: "Monto total",
+            getValue: (row) => Number(row.monto_total ?? 0),
+            formatValue: (value) => formatCurrency(Number(value ?? 0)),
+            type: "currency",
+            align: "right",
+            total: "sum",
+          },
+          {
+            id: "interes_aplicado",
+            header: "Interes aplicado",
+            getValue: (row) => row.totalInteres,
+            formatValue: (value) => formatCurrency(Number(value ?? 0)),
+            type: "currency",
+            align: "right",
+            total: "sum",
+          },
+          {
+            id: "capital_aplicado",
+            header: "Capital aplicado",
+            getValue: (row) => row.totalCapital,
+            formatValue: (value) => formatCurrency(Number(value ?? 0)),
+            type: "currency",
+            align: "right",
+            total: "sum",
+          },
+          {
+            id: "otros_aplicados",
+            header: "Otros aplicados",
+            getValue: (row) => row.totalOtros,
+            formatValue: (value) => formatCurrency(Number(value ?? 0)),
+            type: "currency",
+            align: "right",
+            total: "sum",
+          },
+          {
+            id: "referencia",
+            header: "Referencia",
+            getValue: (row) => row.referencia || "",
+            type: "text",
+          },
+          {
+            id: "observacion",
+            header: "Observacion",
+            getValue: (row) => row.observacion || "",
+            type: "text",
+          },
+          {
+            id: "aplicaciones",
+            header: "Aplicaciones del pago",
+            getValue: (row) => row.aplicacionesTexto,
+            type: "text",
+          },
+        ];
+
+        await exportExcelReport({
+          systemName: "Veredas Sarchi - Poas",
+          title: `Pagos del contrato - ${selectedRow.cliente_nombre || "Cliente"}`,
+          sheetName: "Pagos",
+          fileBaseName: "Control_Cuotas_Pagos",
+          generatedAt: new Date(),
+          generatedBy: user?.email ?? role ?? "No disponible",
+          filters: baseFilters,
+          columns,
+          rows: paymentRows,
+        } satisfies ReportPayload<PaymentExportRow>);
+      } else if (selectedDetailTab === "cargos") {
+        const columns: ReportColumn<CargoRow>[] = [
+          {
+            id: "tipo",
+            header: "Tipo",
+            getValue: (row) => row.tipo_cargo,
+            type: "text",
+          },
+          {
+            id: "descripcion",
+            header: "Descripcion",
+            getValue: (row) => row.descripcion || "-",
+            type: "text",
+          },
+          {
+            id: "vencimiento",
+            header: "Vencimiento",
+            getValue: (row) => parseCalendarDate(row.fecha_vencimiento),
+            formatValue: (_value, row) => formatDate(row.fecha_vencimiento),
+            type: "date",
+          },
+          {
+            id: "estado",
+            header: "Estado",
+            getValue: (row) => row.estado,
+            type: "text",
+          },
+          {
+            id: "monto",
+            header: "Monto",
+            getValue: (row) => Number(row.monto_original ?? 0),
+            formatValue: (value) => formatCurrency(Number(value ?? 0)),
+            type: "currency",
+            align: "right",
+            total: "sum",
+          },
+          {
+            id: "pagado",
+            header: "Pagado",
+            getValue: (row) => Number(row.monto_pagado ?? 0),
+            formatValue: (value) => formatCurrency(Number(value ?? 0)),
+            type: "currency",
+            align: "right",
+            total: "sum",
+          },
+          {
+            id: "pendiente",
+            header: "Pendiente",
+            getValue: (row) =>
+              Math.max(
+                Number(row.monto_original ?? 0) - Number(row.monto_pagado ?? 0),
+                0,
+              ),
+            formatValue: (value) => formatCurrency(Number(value ?? 0)),
+            type: "currency",
+            align: "right",
+            total: "sum",
+          },
+        ];
+
+        await exportExcelReport({
+          systemName: "Veredas Sarchi - Poas",
+          title: `Cargos del contrato - ${selectedRow.cliente_nombre || "Cliente"}`,
+          sheetName: "Cargos",
+          fileBaseName: "Control_Cuotas_Cargos",
+          generatedAt: new Date(),
+          generatedBy: user?.email ?? role ?? "No disponible",
+          filters: baseFilters,
+          columns,
+          rows: detail.cargos,
+        } satisfies ReportPayload<CargoRow>);
+      } else {
+        type EventExportRow = EventoFinancieroRow & {
+          tipoLabel: string;
+          detalleTexto: string;
+        };
+
+        const eventRows: EventExportRow[] = detail.eventos.map((event) => {
+          const eventDetails = buildEventDetails(event);
+          return {
+            ...event,
+            tipoLabel: getEventTypeLabel(event.tipo_evento),
+            detalleTexto:
+              eventDetails
+                .map((detailItem) => `${detailItem.label}: ${detailItem.value}`)
+                .join(" | ") || "Sin detalle adicional",
+          };
+        });
+
+        const columns: ReportColumn<EventExportRow>[] = [
+          {
+            id: "tipo",
+            header: "Tipo",
+            getValue: (row) => row.tipoLabel,
+            type: "text",
+          },
+          {
+            id: "fecha",
+            header: "Fecha",
+            getValue: (row) => formatDateTime(row.fecha_evento),
+            type: "text",
+          },
+          {
+            id: "observacion",
+            header: "Observacion",
+            getValue: (row) => row.observacion || "Sin observacion",
+            type: "text",
+          },
+          {
+            id: "usuario",
+            header: "Usuario",
+            getValue: (row) => row.usuario || "sistema",
+            type: "text",
+          },
+          {
+            id: "detalle",
+            header: "Detalle",
+            getValue: (row) => row.detalleTexto,
+            type: "text",
+          },
+        ];
+
+        await exportExcelReport({
+          systemName: "Veredas Sarchi - Poas",
+          title: `Historial financiero - ${selectedRow.cliente_nombre || "Cliente"}`,
+          sheetName: "Historial",
+          fileBaseName: "Control_Cuotas_Historial",
+          generatedAt: new Date(),
+          generatedBy: user?.email ?? role ?? "No disponible",
+          filters: baseFilters,
+          columns,
+          rows: eventRows,
+        } satisfies ReportPayload<EventExportRow>);
+      }
+
+      toast.success("Excel generado correctamente");
+    } catch (error) {
+      console.error("Error exportando control de cuotas a Excel", error);
+      toast.error(getErrorMessage(error, "No se pudo generar el Excel"));
+    } finally {
+      setExportingExcel(false);
+    }
+  }, [
+    cargoById,
+    detail.cargos,
+    detail.cuotas,
+    detail.eventos,
+    detail.pagos,
+    filterMode,
+    quotaById,
+    quotasByPaymentId,
+    role,
+    searchTerm,
+    selectedDetailTab,
+    selectedRow,
+    user?.email,
+  ]);
 
   const openBackfillDialog = useCallback(() => {
     if (!selectedRow) return;
@@ -1451,6 +2074,38 @@ export default function ControlCuotas() {
                 </Card>
 
                 <Card className="border-border/70 bg-surface shadow-sm">
+                  <CardHeader className="gap-3 pb-0 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <CardTitle className="text-lg">Detalle financiero</CardTitle>
+                      <CardDescription>
+                        Exporta la pestaña activa del contrato seleccionado.
+                      </CardDescription>
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => void exportSelectedFinancialDetail()}
+                      disabled={
+                        detailLoading ||
+                        exportingExcel ||
+                        !selectedRow.id_plan_pago ||
+                        (selectedDetailTab === "cuotas"
+                          ? detail.cuotas.length === 0
+                          : selectedDetailTab === "pagos"
+                            ? detail.pagos.length === 0
+                            : selectedDetailTab === "cargos"
+                              ? detail.cargos.length === 0
+                              : detail.eventos.length === 0)
+                      }
+                    >
+                      {exportingExcel ? (
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      ) : (
+                        <FileSpreadsheet className="mr-2 h-4 w-4" />
+                      )}
+                      Excel
+                    </Button>
+                  </CardHeader>
                   <CardContent className="pt-6">
                     {detailLoading ? (
                       <div className="space-y-3">
@@ -1467,7 +2122,13 @@ export default function ControlCuotas() {
                         }
                       />
                     ) : (
-                      <Tabs defaultValue="cuotas" className="w-full">
+                      <Tabs
+                        value={selectedDetailTab}
+                        onValueChange={(value) =>
+                          setSelectedDetailTab(value as FinancialDetailTab)
+                        }
+                        className="w-full"
+                      >
                         <TabsList className="grid w-full grid-cols-4">
                           <TabsTrigger value="cuotas">Cuotas</TabsTrigger>
                           <TabsTrigger value="pagos">Pagos</TabsTrigger>
@@ -1776,40 +2437,57 @@ export default function ControlCuotas() {
                             />
                           ) : (
                             <div className="space-y-4">
-                              {detail.eventos.map((event) => (
-                                <div
-                                  key={event.id_evento}
-                                  className="rounded-xl border border-border/70 bg-background p-4"
-                                >
-                                  <div className="flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
-                                    <div>
-                                      <div className="flex flex-wrap items-center gap-2">
-                                        <Badge className="bg-primary/10 text-primary hover:bg-primary/10">
-                                          {event.tipo_evento}
-                                        </Badge>
-                                        <span className="text-sm text-muted-foreground">
-                                          {formatDateTime(event.fecha_evento)}
-                                        </span>
+                              {detail.eventos.map((event) => {
+                                const eventDetails = buildEventDetails(event);
+
+                                return (
+                                  <div
+                                    key={event.id_evento}
+                                    className="rounded-xl border border-border/70 bg-background p-4"
+                                  >
+                                    <div className="flex flex-col gap-2">
+                                      <div>
+                                        <div className="flex flex-wrap items-center gap-2">
+                                          <Badge className="bg-primary/10 text-primary hover:bg-primary/10">
+                                            {getEventTypeLabel(event.tipo_evento)}
+                                          </Badge>
+                                          <span className="text-sm text-muted-foreground">
+                                            {formatDateTime(event.fecha_evento)}
+                                          </span>
+                                        </div>
+                                        <p className="mt-2 text-sm text-foreground">
+                                          {event.observacion || "Sin observacion"}
+                                        </p>
+                                        <p className="mt-1 text-xs text-muted-foreground">
+                                          Usuario: {event.usuario || "sistema"}
+                                        </p>
                                       </div>
-                                      <p className="mt-2 text-sm text-foreground">
-                                        {event.observacion || "Sin observacion"}
-                                      </p>
-                                      <p className="mt-1 text-xs text-muted-foreground">
-                                        Usuario: {event.usuario || "sistema"}
-                                      </p>
                                     </div>
-                                    <div className="text-xs text-muted-foreground">
-                                      <p>Plan origen: {event.id_plan_origen ?? "-"}</p>
-                                      <p>
-                                        Plan resultante: {event.id_plan_resultante ?? "-"}
+
+                                    {eventDetails.length > 0 ? (
+                                      <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                                        {eventDetails.map((detailItem) => (
+                                          <div
+                                            key={`${event.id_evento}-${detailItem.label}`}
+                                            className="rounded-lg border border-border/70 bg-muted/20 px-3 py-2"
+                                          >
+                                            <p className="text-xs uppercase text-muted-foreground">
+                                              {detailItem.label}
+                                            </p>
+                                            <p className="mt-1 font-medium text-foreground">
+                                              {detailItem.value}
+                                            </p>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    ) : (
+                                      <p className="mt-4 rounded-lg border border-border/70 bg-muted/20 px-3 py-2 text-sm text-muted-foreground">
+                                        Sin detalle adicional para este evento.
                                       </p>
-                                    </div>
+                                    )}
                                   </div>
-                                  <pre className="mt-4 overflow-x-auto rounded-lg bg-muted/30 p-3 text-xs text-muted-foreground">
-                                    {formatPayload(event.payload)}
-                                  </pre>
-                                </div>
-                              ))}
+                                );
+                              })}
                             </div>
                           )}
                         </TabsContent>

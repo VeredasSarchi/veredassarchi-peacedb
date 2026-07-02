@@ -6,6 +6,7 @@ import {
   ArrowLeft,
   Calendar,
   DollarSign,
+  FileSpreadsheet,
   Loader2,
   RefreshCw,
   Search,
@@ -14,6 +15,11 @@ import {
 import { useAuth } from "@/auth/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { formatContractDisplayLabel, getContractSearchTokens } from "@/lib/contract-display";
+import {
+  exportExcelReport,
+  type ReportColumn,
+  type ReportPayload,
+} from "@/lib/report-export";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -116,6 +122,7 @@ type PaymentFormState = {
 };
 
 type MaintenanceAlertCategory = "1m" | "2m" | "3m";
+type MaintenanceDetailTab = "cuotas" | "pagos";
 
 type MaintenanceAlert = {
   idContrato: number;
@@ -139,7 +146,7 @@ function parseCalendarDate(value: string | null | undefined): Date | null {
   if (!value) return null;
 
   const trimmed = value.trim();
-  const calendarDateMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(trimmed);
+  const calendarDateMatch = /^(\d{4})-(\d{2})-(\d{2})(?:$|[T\s])/.exec(trimmed);
   if (calendarDateMatch) {
     const [, year, month, day] = calendarDateMatch;
     return new Date(Number(year), Number(month) - 1, Number(day));
@@ -155,11 +162,11 @@ function formatDate(value: string | null | undefined): string {
   return parsed.toLocaleDateString("es-CR");
 }
 
-function formatDateTime(value: string | null | undefined): string {
-  if (!value) return "No definido";
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return value;
-  return parsed.toLocaleString("es-CR");
+function toPaymentTimestamp(value: string): string {
+  const parsed = parseCalendarDate(value);
+  if (!parsed) return value;
+  parsed.setHours(12, 0, 0, 0);
+  return parsed.toISOString();
 }
 
 function getTodayInputValue(): string {
@@ -280,12 +287,15 @@ export default function ControlMantenimiento() {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedAlertTab, setSelectedAlertTab] =
     useState<MaintenanceAlertCategory>("1m");
+  const [selectedDetailTab, setSelectedDetailTab] =
+    useState<MaintenanceDetailTab>("cuotas");
   const [paymentOpen, setPaymentOpen] = useState(false);
   const [paymentForm, setPaymentForm] = useState<PaymentFormState>(
     getInitialPaymentForm(),
   );
   const [syncing, setSyncing] = useState(false);
   const [registeringPayment, setRegisteringPayment] = useState(false);
+  const [exportingExcel, setExportingExcel] = useState(false);
 
   const syncMaintenance = useCallback(async () => {
     setSyncing(true);
@@ -540,6 +550,21 @@ export default function ControlMantenimiento() {
     return map;
   }, [detailAplicaciones]);
 
+  const paymentDisplayNumberById = useMemo(() => {
+    const map = new Map<number, number>();
+    [...detailPagos]
+      .sort((a, b) => {
+        const aTime = new Date(a.fecha_pago).getTime();
+        const bTime = new Date(b.fecha_pago).getTime();
+        if (aTime !== bTime) return aTime - bTime;
+        return a.id_pago_mantenimiento - b.id_pago_mantenimiento;
+      })
+      .forEach((pago, index) => {
+        map.set(pago.id_pago_mantenimiento, index + 1);
+      });
+    return map;
+  }, [detailPagos]);
+
   const cuotasById = useMemo(() => {
     const map = new Map<number, ControlMantenimientoCuotaRow>();
     detailCuotas.forEach((cuota) => {
@@ -575,6 +600,224 @@ export default function ControlMantenimiento() {
     }
   }, [loadDetail, loadResumen, selectedContractId]);
 
+  const exportSelectedMaintenanceDetail = useCallback(async () => {
+    if (!selectedRow) return;
+
+    const rowsToExport =
+      selectedDetailTab === "cuotas" ? detailCuotas : detailPagos;
+    if (rowsToExport.length === 0) {
+      toast.error("No hay datos para exportar en esta pestaña");
+      return;
+    }
+
+    setExportingExcel(true);
+    try {
+      const contractLabel = formatContractDisplayLabel(selectedRow, {
+        fallback: "Formulario pendiente",
+      });
+      const baseFilters = [
+        { label: "Contrato", value: contractLabel },
+        {
+          label: "Cliente",
+          value: selectedRow.cliente_nombre || "Cliente sin nombre",
+        },
+        { label: "Busqueda", value: searchTerm.trim() || "Sin busqueda" },
+      ];
+
+      if (selectedDetailTab === "cuotas") {
+        const columns: ReportColumn<ControlMantenimientoCuotaRow>[] = [
+          {
+            id: "periodo",
+            header: "Periodo",
+            getValue: (row) => Number(row.numero_periodo ?? 0),
+            type: "number",
+            align: "right",
+          },
+          {
+            id: "inicio",
+            header: "Inicio",
+            getValue: (row) => parseCalendarDate(row.fecha_inicio_periodo),
+            formatValue: (_value, row) => formatDate(row.fecha_inicio_periodo),
+            type: "date",
+          },
+          {
+            id: "fin",
+            header: "Fin",
+            getValue: (row) => parseCalendarDate(row.fecha_fin_periodo),
+            formatValue: (_value, row) => formatDate(row.fecha_fin_periodo),
+            type: "date",
+          },
+          {
+            id: "vencimiento",
+            header: "Vencimiento",
+            getValue: (row) => parseCalendarDate(row.fecha_vencimiento),
+            formatValue: (_value, row) => formatDate(row.fecha_vencimiento),
+            type: "date",
+          },
+          {
+            id: "estado",
+            header: "Estado",
+            getValue: (row) => row.estado || "PENDIENTE",
+            type: "text",
+          },
+          {
+            id: "monto",
+            header: "Monto",
+            getValue: (row) => Number(row.monto_programado ?? 0),
+            formatValue: (value) => formatCurrency(Number(value ?? 0)),
+            type: "currency",
+            align: "right",
+            total: "sum",
+          },
+          {
+            id: "pagado",
+            header: "Pagado",
+            getValue: (row) => Number(row.monto_pagado ?? 0),
+            formatValue: (value) => formatCurrency(Number(value ?? 0)),
+            type: "currency",
+            align: "right",
+            total: "sum",
+          },
+          {
+            id: "pendiente",
+            header: "Pendiente",
+            getValue: (row) =>
+              Math.max(
+                Number(row.monto_programado ?? 0) - Number(row.monto_pagado ?? 0),
+                0,
+              ),
+            formatValue: (value) => formatCurrency(Number(value ?? 0)),
+            type: "currency",
+            align: "right",
+            total: "sum",
+          },
+        ];
+
+        await exportExcelReport({
+          systemName: "Veredas Sarchi - Poas",
+          title: `Cuotas de mantenimiento - ${selectedRow.cliente_nombre || "Cliente"}`,
+          sheetName: "Cuotas mantenimiento",
+          fileBaseName: "Control_Mantenimiento_Cuotas",
+          generatedAt: new Date(),
+          generatedBy: user?.email ?? role ?? "No disponible",
+          filters: baseFilters,
+          columns,
+          rows: detailCuotas,
+        } satisfies ReportPayload<ControlMantenimientoCuotaRow>);
+      } else {
+        type PaymentExportRow = MantenimientoPagoRow & {
+          displayNumber: number;
+          aplicacionesTexto: string;
+        };
+
+        const paymentRows: PaymentExportRow[] = detailPagos.map((pago) => {
+          const aplicaciones =
+            paymentApplicationsById.get(pago.id_pago_mantenimiento) ?? [];
+          return {
+            ...pago,
+            displayNumber:
+              paymentDisplayNumberById.get(pago.id_pago_mantenimiento) ??
+              pago.id_pago_mantenimiento,
+            aplicacionesTexto:
+              aplicaciones
+                .map((application) => {
+                  const cuota = cuotasById.get(application.id_cuota_mantenimiento);
+                  return `Periodo ${cuota?.numero_periodo ?? "-"}: ${formatCurrency(
+                    application.monto_aplicado,
+                  )}`;
+                })
+                .join(" | ") || "Sin detalle de aplicaciones",
+          };
+        });
+
+        const columns: ReportColumn<PaymentExportRow>[] = [
+          {
+            id: "pago",
+            header: "Pago",
+            getValue: (row) => `Pago #${row.displayNumber}`,
+            type: "text",
+          },
+          {
+            id: "estado",
+            header: "Estado",
+            getValue: (row) => row.estado,
+            type: "text",
+          },
+          {
+            id: "fecha",
+            header: "Fecha",
+            getValue: (row) => parseCalendarDate(row.fecha_pago),
+            formatValue: (_value, row) => formatDate(row.fecha_pago),
+            type: "date",
+          },
+          {
+            id: "metodo",
+            header: "Metodo",
+            getValue: (row) => row.metodo_pago || "",
+            type: "text",
+          },
+          {
+            id: "monto_total",
+            header: "Monto total",
+            getValue: (row) => Number(row.monto_total ?? 0),
+            formatValue: (value) => formatCurrency(Number(value ?? 0)),
+            type: "currency",
+            align: "right",
+            total: "sum",
+          },
+          {
+            id: "referencia",
+            header: "Referencia",
+            getValue: (row) => row.referencia || "",
+            type: "text",
+          },
+          {
+            id: "observacion",
+            header: "Observacion",
+            getValue: (row) => row.observacion || "",
+            type: "text",
+          },
+          {
+            id: "aplicaciones",
+            header: "Aplicaciones del pago",
+            getValue: (row) => row.aplicacionesTexto,
+            type: "text",
+          },
+        ];
+
+        await exportExcelReport({
+          systemName: "Veredas Sarchi - Poas",
+          title: `Pagos de mantenimiento - ${selectedRow.cliente_nombre || "Cliente"}`,
+          sheetName: "Pagos mantenimiento",
+          fileBaseName: "Control_Mantenimiento_Pagos",
+          generatedAt: new Date(),
+          generatedBy: user?.email ?? role ?? "No disponible",
+          filters: baseFilters,
+          columns,
+          rows: paymentRows,
+        } satisfies ReportPayload<PaymentExportRow>);
+      }
+
+      toast.success("Excel generado correctamente");
+    } catch (error) {
+      console.error("Error exportando mantenimiento a Excel", error);
+      toast.error(getErrorMessage(error, "No se pudo generar el Excel"));
+    } finally {
+      setExportingExcel(false);
+    }
+  }, [
+    cuotasById,
+    detailCuotas,
+    detailPagos,
+    paymentApplicationsById,
+    paymentDisplayNumberById,
+    role,
+    searchTerm,
+    selectedDetailTab,
+    selectedRow,
+    user?.email,
+  ]);
+
   const handleRegisterPayment = useCallback(async () => {
     if (!selectedRow?.id_contrato) return;
 
@@ -596,7 +839,7 @@ export default function ControlMantenimiento() {
         {
           p_id_contrato: selectedRow.id_contrato,
           p_monto_total: montoTotal,
-          p_fecha_pago: paymentForm.fechaPago,
+          p_fecha_pago: toPaymentTimestamp(paymentForm.fechaPago),
           p_metodo_pago: paymentForm.metodoPago || null,
           p_referencia: paymentForm.referencia || null,
           p_observacion: paymentForm.observacion || null,
@@ -994,6 +1237,34 @@ export default function ControlMantenimiento() {
                 </Card>
 
                 <Card className="border-border/70 bg-surface shadow-sm">
+                  <CardHeader className="gap-3 pb-0 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <CardTitle className="text-lg">Detalle de mantenimiento</CardTitle>
+                      <CardDescription>
+                        Exporta la pestaña activa del contrato seleccionado.
+                      </CardDescription>
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => void exportSelectedMaintenanceDetail()}
+                      disabled={
+                        detailLoading ||
+                        exportingExcel ||
+                        !selectedRow.configuracion_completa ||
+                        (selectedDetailTab === "cuotas"
+                          ? detailCuotas.length === 0
+                          : detailPagos.length === 0)
+                      }
+                    >
+                      {exportingExcel ? (
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      ) : (
+                        <FileSpreadsheet className="mr-2 h-4 w-4" />
+                      )}
+                      Excel
+                    </Button>
+                  </CardHeader>
                   <CardContent className="pt-6">
                     {detailLoading ? (
                       <div className="space-y-3">
@@ -1006,7 +1277,13 @@ export default function ControlMantenimiento() {
                         description="Completa fecha de inicio y monto anual para habilitar este modulo."
                       />
                     ) : (
-                      <Tabs defaultValue="cuotas" className="w-full">
+                      <Tabs
+                        value={selectedDetailTab}
+                        onValueChange={(value) =>
+                          setSelectedDetailTab(value as MaintenanceDetailTab)
+                        }
+                        className="w-full"
+                      >
                         <TabsList className="grid w-full grid-cols-2">
                           <TabsTrigger value="cuotas">Cuotas</TabsTrigger>
                           <TabsTrigger value="pagos">Pagos</TabsTrigger>
@@ -1094,6 +1371,10 @@ export default function ControlMantenimiento() {
                                   paymentApplicationsById.get(
                                     pago.id_pago_mantenimiento,
                                   ) ?? [];
+                                const displayNumber =
+                                  paymentDisplayNumberById.get(
+                                    pago.id_pago_mantenimiento,
+                                  ) ?? pago.id_pago_mantenimiento;
 
                                 return (
                                   <div
@@ -1104,7 +1385,7 @@ export default function ControlMantenimiento() {
                                       <div>
                                         <div className="flex flex-wrap items-center gap-2">
                                           <p className="font-semibold text-foreground">
-                                            Pago #{pago.id_pago_mantenimiento}
+                                            Pago #{displayNumber}
                                           </p>
                                           <Badge
                                             className={getStatusBadgeClass(
@@ -1115,7 +1396,7 @@ export default function ControlMantenimiento() {
                                           </Badge>
                                         </div>
                                         <p className="mt-1 text-sm text-muted-foreground">
-                                          {formatDateTime(pago.fecha_pago)}
+                                          {formatDate(pago.fecha_pago)}
                                           {pago.metodo_pago
                                             ? ` - ${pago.metodo_pago}`
                                             : ""}

@@ -19,11 +19,33 @@ import { Label } from "@/components/ui/label";
 
 type Jardin = Tables<"jardin">;
 
+type GardenStats = {
+  lotesDisponibles: number;
+  cenizariosDisponibles: number;
+};
+
+type ProductStatus = "contract" | "precontract";
+
+function pluralize(count: number, singular: string, plural: string) {
+  return `${count} ${count === 1 ? singular : plural}`;
+}
+
+function isFormalizedContractState(estado: string | null | undefined): boolean {
+  return estado === "VIGENTE";
+}
+
+function getGardenStatsDescription(stats: GardenStats | undefined) {
+  const lotes = stats?.lotesDisponibles ?? 0;
+  const cenizarios = stats?.cenizariosDisponibles ?? 0;
+  return `Disponibles: ${pluralize(lotes, "lote", "lotes")} / ${pluralize(cenizarios, "cenizario", "cenizarios")}`;
+}
+
 export default function Jardines() {
   const navigate = useNavigate();
   const { role } = useAuth();
   const isAdmin = role === "admin";
   const [gardens, setGardens] = useState<Jardin[]>([]);
+  const [gardenStats, setGardenStats] = useState<Record<number, GardenStats>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -71,7 +93,91 @@ export default function Jardines() {
       }
 
       if (isMounted) {
+        const gardenIds = new Set(gardensData.map((garden) => garden.id_jardin));
+
+        const [lotesRes, espaciosRes, cenizariosRes, productosRes] = await Promise.all([
+          supabase.from("lote").select("id_lote, id_jardin"),
+          supabase.from("lote_espacio").select("id_lote, estado, nombre_ocupante"),
+          supabase.from("tipo_cenizario").select("id_tipo_cenizario, id_jardin"),
+          supabase
+            .from("contrato_producto")
+            .select("tipo_producto, id_lote, id_tipo_cenizario, contrato:contrato(estado_contrato)")
+            .in("tipo_producto", ["LOTE", "CENIZARIO"]),
+        ]);
+
+        if (!isMounted) return;
+
+        if (
+          lotesRes.error ||
+          espaciosRes.error ||
+          cenizariosRes.error ||
+          productosRes.error
+        ) {
+          setError("No se pudo cargar la disponibilidad de los jardines.");
+          setLoading(false);
+          return;
+        }
+
+        const nextStats: Record<number, GardenStats> = {};
+        gardenIds.forEach((id) => {
+          nextStats[id] = { lotesDisponibles: 0, cenizariosDisponibles: 0 };
+        });
+
+        const occupiedLotIds = new Set<number>();
+        (espaciosRes.data ?? []).forEach((space) => {
+          if (space.estado === "OCUPADO" || (space.nombre_ocupante || "").trim().length > 0) {
+            occupiedLotIds.add(space.id_lote);
+          }
+        });
+
+        const lotStatusById: Record<number, ProductStatus> = {};
+        const cenizarioStatusById: Record<number, ProductStatus> = {};
+        (productosRes.data ?? []).forEach((producto) => {
+          const contrato = (producto as { contrato: { estado_contrato: string } | null }).contrato;
+          if (!contrato?.estado_contrato) return;
+
+          const status: ProductStatus | null =
+            contrato.estado_contrato === "PRECONTRATO"
+              ? "precontract"
+              : isFormalizedContractState(contrato.estado_contrato)
+                ? "contract"
+                : null;
+
+          if (!status) return;
+
+          if (producto.tipo_producto === "LOTE" && producto.id_lote) {
+            if (status === "contract" || !lotStatusById[producto.id_lote]) {
+              lotStatusById[producto.id_lote] = status;
+            }
+          }
+
+          if (producto.tipo_producto === "CENIZARIO" && producto.id_tipo_cenizario) {
+            if (status === "contract" || !cenizarioStatusById[producto.id_tipo_cenizario]) {
+              cenizarioStatusById[producto.id_tipo_cenizario] = status;
+            }
+          }
+        });
+
+        (lotesRes.data ?? []).forEach((lote) => {
+          if (!gardenIds.has(lote.id_jardin)) return;
+          const isAvailable =
+            !lotStatusById[lote.id_lote] &&
+            !occupiedLotIds.has(lote.id_lote);
+
+          if (isAvailable) {
+            nextStats[lote.id_jardin].lotesDisponibles += 1;
+          }
+        });
+
+        (cenizariosRes.data ?? []).forEach((cenizario) => {
+          if (!gardenIds.has(cenizario.id_jardin)) return;
+          if (!cenizarioStatusById[cenizario.id_tipo_cenizario]) {
+            nextStats[cenizario.id_jardin].cenizariosDisponibles += 1;
+          }
+        });
+
         setGardens(gardensData);
+        setGardenStats(nextStats);
         setLoading(false);
       }
     }
@@ -114,6 +220,10 @@ export default function Jardines() {
       setGardens((prev) =>
         [...prev, newGarden].sort((a, b) => a.nombre.localeCompare(b.nombre))
       );
+      setGardenStats((prev) => ({
+        ...prev,
+        [newGarden.id_jardin]: { lotesDisponibles: 0, cenizariosDisponibles: 0 },
+      }));
     }
 
     setGardenName("");
@@ -171,7 +281,9 @@ export default function Jardines() {
                 <Card key={garden.id_jardin} className="border border-border">
                   <CardHeader>
                     <CardTitle className="text-lg">{garden.nombre}</CardTitle>
-                    <CardDescription>ID {garden.id_jardin}</CardDescription>
+                    <CardDescription>
+                      {getGardenStatsDescription(gardenStats[garden.id_jardin])}
+                    </CardDescription>
                   </CardHeader>
                   <CardContent>
                     <Button

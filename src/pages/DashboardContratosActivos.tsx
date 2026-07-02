@@ -78,7 +78,27 @@ import { buildOneDriveFolderPayload, type OneDriveFolderPayload } from "@/lib/co
 import { renameContractFolderAsCancelled } from "@/lib/onedrive-service";
 import { cn } from "@/lib/utils";
 
-type ContratoRow = Tables<"contrato"> & {
+type OneDriveValidationFields = {
+  onedrive_validacion_estado?: string | null;
+  onedrive_validacion_error?: string | null;
+  onedrive_validacion_actualizado_en?: string | null;
+  onedrive_carpeta_id?: string | null;
+  onedrive_carpeta_nombre?: string | null;
+  onedrive_carpeta_url?: string | null;
+  onedrive_categoria_ruta?: string | null;
+};
+
+type OneDriveValidationUpdate = {
+  onedrive_validacion_estado: string | null;
+  onedrive_validacion_error: string | null;
+  onedrive_validacion_actualizado_en: string;
+  onedrive_carpeta_id: string | null;
+  onedrive_carpeta_nombre: string | null;
+  onedrive_carpeta_url: string | null;
+  onedrive_categoria_ruta: string | null;
+};
+
+type ContratoRow = Tables<"contrato"> & OneDriveValidationFields & {
   numero_formulario: string | null;
   fecha_inicio_mantenimiento?: string | null;
 };
@@ -114,7 +134,7 @@ type ContratoDetalle = {
   editLogs: EditLogRow[];
 };
 
-type ContratoSelectRow = Tables<"contrato"> & {
+type ContratoSelectRow = Tables<"contrato"> & OneDriveValidationFields & {
   numero_formulario?: string | null;
   cliente?: ClienteRow | ClienteRow[] | null;
   vendedor?: VendedorRow | VendedorRow[] | null;
@@ -242,6 +262,46 @@ function createEmptyDriveState(expected: OneDriveFolderPayload | null): DriveFol
   };
 }
 
+function createDriveStateFromPersistedValidation(
+  record: ContratoDetalle,
+  expected: OneDriveFolderPayload | null,
+): DriveFolderState {
+  const baseState = createEmptyDriveState(expected);
+  const estado = record.contrato.onedrive_validacion_estado;
+
+  if (estado === "COMPLETADO") {
+    const folderId = record.contrato.onedrive_carpeta_id ?? null;
+    const folderName =
+      record.contrato.onedrive_carpeta_nombre ?? expected?.folderName ?? "Expediente OneDrive";
+
+    return {
+      ...baseState,
+      exists: true,
+      categoryPath: record.contrato.onedrive_categoria_ruta ?? null,
+      rootFolder: folderId
+        ? {
+            id: folderId,
+            name: folderName,
+            webUrl: record.contrato.onedrive_carpeta_url ?? null,
+          }
+        : null,
+    };
+  }
+
+  if (estado === "ERROR") {
+    return {
+      ...baseState,
+      error: record.contrato.onedrive_validacion_error ?? "La ultima validacion de OneDrive fallo",
+      categoryPath: record.contrato.onedrive_categoria_ruta ?? null,
+    };
+  }
+
+  return {
+    ...baseState,
+    categoryPath: record.contrato.onedrive_categoria_ruta ?? null,
+  };
+}
+
 function FileUploadButton({ uploading, onFilesSelected }: FileUploadButtonProps) {
   return (
     <label className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-border bg-background px-3 py-2 text-xs text-card-foreground hover:bg-muted/50">
@@ -312,6 +372,19 @@ function isMissingNumeroFormularioColumn(error: unknown): boolean {
       ? String((error as { message?: unknown }).message || "")
       : "";
   return message.toLowerCase().includes("numero_formulario");
+}
+
+function isMissingOneDriveValidationColumn(error: unknown): boolean {
+  const message =
+    typeof error === "object" && error && "message" in error
+      ? String((error as { message?: unknown }).message || "")
+      : "";
+  const normalized = message.toLowerCase();
+  return (
+    normalized.includes("onedrive_validacion") ||
+    normalized.includes("onedrive_carpeta") ||
+    normalized.includes("onedrive_categoria")
+  );
 }
 
 function isMissingEditHistoryTable(error: unknown): boolean {
@@ -441,12 +514,6 @@ function buildEditChangeLog(before: ContractEditDraft, after: ContractEditDraft)
   addScalarChange("cliente.profesion", "Profesion", beforeNormalized.cliente.profesion, afterNormalized.cliente.profesion);
   addScalarChange("cliente.observaciones", "Observaciones del cliente", beforeNormalized.cliente.observaciones, afterNormalized.cliente.observaciones);
   addScalarChange("contrato.fecha_firma", "Fecha de firma", beforeNormalized.contrato.fecha_firma, afterNormalized.contrato.fecha_firma);
-  addScalarChange(
-    "contrato.observaciones_contrato",
-    "Observaciones del contrato",
-    beforeNormalized.contrato.observaciones_contrato,
-    afterNormalized.contrato.observaciones_contrato,
-  );
 
   if (JSON.stringify(beforeNormalized.autorizados) !== JSON.stringify(afterNormalized.autorizados)) {
     cambios.autorizados = {
@@ -783,6 +850,7 @@ export default function DashboardContratosActivos() {
   const [contratos, setContratos] = useState<ContratoDetalle[]>([]);
   const [loading, setLoading] = useState(false);
   const [supportsNumeroFormulario, setSupportsNumeroFormulario] = useState(true);
+  const [supportsOneDriveValidationPersistence, setSupportsOneDriveValidationPersistence] = useState(true);
   const [searchCliente, setSearchCliente] = useState("");
   const [openFolders, setOpenFolders] = useState<string[]>([]);
   const [driveByContract, setDriveByContract] = useState<Record<number, DriveFolderState>>({});
@@ -835,16 +903,30 @@ export default function DashboardContratosActivos() {
             nombre_completo
           )
         `;
+      const oneDriveValidationColumns = `
+          onedrive_validacion_estado,
+          onedrive_validacion_error,
+          onedrive_validacion_actualizado_en,
+          onedrive_carpeta_id,
+          onedrive_carpeta_nombre,
+          onedrive_carpeta_url,
+          onedrive_categoria_ruta
+        `;
 
       const fetchContratos = async (
         includeNumeroFormulario: boolean,
+        includeOneDriveValidation: boolean,
       ): Promise<{
         data: ContratoSelectRow[] | null;
         error: unknown | null;
       }> => {
-        const selectedColumns: string = includeNumeroFormulario
-          ? `numero_formulario,${contratoSelectBase}`
-          : contratoSelectBase;
+        const selectedColumns = [
+          includeNumeroFormulario ? "numero_formulario" : null,
+          includeOneDriveValidation ? oneDriveValidationColumns : null,
+          contratoSelectBase,
+        ]
+          .filter(Boolean)
+          .join(",");
 
         const result = await supabase
           .from("contrato")
@@ -858,22 +940,42 @@ export default function DashboardContratosActivos() {
         };
       };
 
-      const firstAttempt = await fetchContratos(true);
-      let contratosData = firstAttempt.data;
-      let contratosError = firstAttempt.error;
       let hasNumeroFormulario = true;
+      let hasOneDriveValidation = true;
+      let contratosData: ContratoSelectRow[] | null = null;
+      let contratosError: unknown | null = null;
 
-      if (contratosError && isMissingNumeroFormularioColumn(contratosError)) {
-        const fallbackAttempt = await fetchContratos(false);
-        contratosData = fallbackAttempt.data;
-        contratosError = fallbackAttempt.error;
-        hasNumeroFormulario = false;
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        const result = await fetchContratos(hasNumeroFormulario, hasOneDriveValidation);
+        contratosData = result.data;
+        contratosError = result.error;
+
+        if (!contratosError) {
+          break;
+        }
+
+        const missingNumeroFormulario =
+          hasNumeroFormulario && isMissingNumeroFormularioColumn(contratosError);
+        const missingOneDriveValidation =
+          hasOneDriveValidation && isMissingOneDriveValidationColumn(contratosError);
+
+        if (!missingNumeroFormulario && !missingOneDriveValidation) {
+          break;
+        }
+
+        if (missingNumeroFormulario) {
+          hasNumeroFormulario = false;
+        }
+        if (missingOneDriveValidation) {
+          hasOneDriveValidation = false;
+        }
       }
 
       if (contratosError) {
         throw contratosError;
       }
       setSupportsNumeroFormulario(hasNumeroFormulario);
+      setSupportsOneDriveValidationPersistence(hasOneDriveValidation);
 
       const contratoRows = contratosData ?? [];
       const contratosBase: ContratoDetalle[] = contratoRows.map((row) => ({
@@ -1024,7 +1126,14 @@ export default function DashboardContratosActivos() {
       setDriveByContract((prev) => {
         const next: Record<number, DriveFolderState> = {};
         detallados.forEach((item) => {
-          next[item.contrato.id_contrato] = prev[item.contrato.id_contrato] ?? createEmptyDriveState(null);
+          let expected: OneDriveFolderPayload | null = null;
+          try {
+            expected = buildOneDriveFolderPayload(item);
+          } catch {
+            expected = null;
+          }
+          next[item.contrato.id_contrato] =
+            prev[item.contrato.id_contrato] ?? createDriveStateFromPersistedValidation(item, expected);
         });
         return next;
       });
@@ -1039,6 +1148,48 @@ export default function DashboardContratosActivos() {
   useEffect(() => {
     void loadContratosActivos();
   }, [loadContratosActivos]);
+
+  const persistOneDriveValidation = useCallback(
+    async (
+      contractId: number,
+      payload: OneDriveValidationUpdate,
+      warningMessage = "No se pudo guardar el estado de OneDrive en la base de datos",
+    ) => {
+      if (!supportsOneDriveValidationPersistence) {
+        return false;
+      }
+
+      const { error } = await supabase
+        .from("contrato")
+        .update(payload)
+        .eq("id_contrato", contractId);
+
+      if (error) {
+        if (isMissingOneDriveValidationColumn(error)) {
+          setSupportsOneDriveValidationPersistence(false);
+        }
+        console.error("Error guardando validacion OneDrive:", error);
+        toast.warning(warningMessage);
+        return false;
+      }
+
+      setContratos((current) =>
+        current.map((item) =>
+          item.contrato.id_contrato === contractId
+            ? {
+                ...item,
+                contrato: {
+                  ...item.contrato,
+                  ...payload,
+                },
+              }
+            : item,
+        ),
+      );
+      return true;
+    },
+    [supportsOneDriveValidationPersistence],
+  );
 
   const agrupadosPorCliente = useMemo(() => {
     const map = new Map<string, { key: string; clienteNombre: string; items: ContratoDetalle[] }>();
@@ -1249,7 +1400,6 @@ export default function DashboardContratosActivos() {
         .from("contrato")
         .update({
           fecha_firma: toNullableTrimmed(normalized.contrato.fecha_firma),
-          observaciones_contrato: toNullableTrimmed(normalized.contrato.observaciones_contrato),
         })
         .eq("id_contrato", idContrato);
 
@@ -1325,6 +1475,19 @@ export default function DashboardContratosActivos() {
       expected = buildOneDriveFolderPayload(item);
     } catch (error) {
       const message = error instanceof Error ? error.message : "No se pudo construir la ruta esperada en OneDrive";
+      await persistOneDriveValidation(
+        contractId,
+        {
+          onedrive_validacion_estado: "ERROR",
+          onedrive_validacion_error: message,
+          onedrive_validacion_actualizado_en: new Date().toISOString(),
+          onedrive_carpeta_id: null,
+          onedrive_carpeta_nombre: null,
+          onedrive_carpeta_url: null,
+          onedrive_categoria_ruta: null,
+        },
+        "No se pudo guardar el error de validacion OneDrive en la base de datos",
+      );
       setDriveByContract((prev) => ({
         ...prev,
         [contractId]: {
@@ -1372,6 +1535,21 @@ export default function DashboardContratosActivos() {
         throw new Error("OneDrive no devolvio una respuesta valida para este contrato");
       }
 
+      const validationPayload: OneDriveValidationUpdate = {
+        onedrive_validacion_estado: data.exists ? "COMPLETADO" : "PENDIENTE",
+        onedrive_validacion_error: null,
+        onedrive_validacion_actualizado_en: new Date().toISOString(),
+        onedrive_carpeta_id: data.folder?.id ?? null,
+        onedrive_carpeta_nombre: data.folder?.name ?? null,
+        onedrive_carpeta_url: data.folder?.webUrl ?? null,
+        onedrive_categoria_ruta: data.categoryPath ?? null,
+      };
+      await persistOneDriveValidation(
+        contractId,
+        validationPayload,
+        "OneDrive se valido, pero no se pudo guardar el estado en la base de datos",
+      );
+
       setDriveByContract((prev) => ({
         ...prev,
         [contractId]: {
@@ -1399,6 +1577,19 @@ export default function DashboardContratosActivos() {
       }));
     } catch (error) {
       const message = error instanceof Error ? error.message : "No se pudo consultar OneDrive";
+      await persistOneDriveValidation(
+        contractId,
+        {
+          onedrive_validacion_estado: "ERROR",
+          onedrive_validacion_error: message,
+          onedrive_validacion_actualizado_en: new Date().toISOString(),
+          onedrive_carpeta_id: null,
+          onedrive_carpeta_nombre: null,
+          onedrive_carpeta_url: null,
+          onedrive_categoria_ruta: null,
+        },
+        "No se pudo guardar el error de validacion OneDrive en la base de datos",
+      );
       setDriveByContract((prev) => ({
         ...prev,
         [contractId]: {
@@ -1410,7 +1601,7 @@ export default function DashboardContratosActivos() {
       }));
       toast.error(message);
     }
-  }, []);
+  }, [persistOneDriveValidation]);
 
   const loadSubfolderItems = useCallback(async (contractId: number, folderId: string, folderName: string) => {
     setDriveByContract((prev) => ({
@@ -1697,7 +1888,6 @@ export default function DashboardContratosActivos() {
                 <AccordionContent>
                   <div className="space-y-4 pt-2">
                     {grupo.items.map((item) => {
-                      const driveState = driveByContract[item.contrato.id_contrato] ?? createEmptyDriveState(null);
                       const expected = (() => {
                         try {
                           return buildOneDriveFolderPayload(item);
@@ -1705,6 +1895,9 @@ export default function DashboardContratosActivos() {
                           return null;
                         }
                       })();
+                      const driveState =
+                        driveByContract[item.contrato.id_contrato] ??
+                        createDriveStateFromPersistedValidation(item, expected);
                       const contractFolders = driveState.items.filter((driveItem) => driveItem.isFolder);
                       const contractFiles = driveState.items.filter((driveItem) => !driveItem.isFolder);
                       const contractTitle = formatContractDisplayLabel(item.contrato);
@@ -2392,9 +2585,10 @@ export default function DashboardContratosActivos() {
                     Observaciones del contrato
                     <Textarea
                       placeholder="Notas relevantes del pre-contrato"
-                      className="min-h-28"
+                      className="min-h-28 bg-muted/40 text-muted-foreground"
                       value={editDraft.contrato.observaciones_contrato}
-                      onChange={(event) => updateContratoDraft("observaciones_contrato", event.target.value)}
+                      readOnly
+                      aria-readonly="true"
                     />
                   </label>
                 </div>

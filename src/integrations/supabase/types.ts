@@ -77,6 +77,13 @@ export type Database = {
           onedrive_anulacion_actualizado_en: string | null
           onedrive_anulacion_error: string | null
           onedrive_anulacion_estado: string | null
+          onedrive_carpeta_id: string | null
+          onedrive_carpeta_nombre: string | null
+          onedrive_carpeta_url: string | null
+          onedrive_categoria_ruta: string | null
+          onedrive_validacion_actualizado_en: string | null
+          onedrive_validacion_error: string | null
+          onedrive_validacion_estado: string | null
           plazo_anios: number | null
           saldo_pendiente: number | null
           tasa_interes_anual: number | null
@@ -106,6 +113,13 @@ export type Database = {
           onedrive_anulacion_actualizado_en?: string | null
           onedrive_anulacion_error?: string | null
           onedrive_anulacion_estado?: string | null
+          onedrive_carpeta_id?: string | null
+          onedrive_carpeta_nombre?: string | null
+          onedrive_carpeta_url?: string | null
+          onedrive_categoria_ruta?: string | null
+          onedrive_validacion_actualizado_en?: string | null
+          onedrive_validacion_error?: string | null
+          onedrive_validacion_estado?: string | null
           plazo_anios?: number | null
           saldo_pendiente?: number | null
           tasa_interes_anual?: number | null
@@ -135,6 +149,13 @@ export type Database = {
           onedrive_anulacion_actualizado_en?: string | null
           onedrive_anulacion_error?: string | null
           onedrive_anulacion_estado?: string | null
+          onedrive_carpeta_id?: string | null
+          onedrive_carpeta_nombre?: string | null
+          onedrive_carpeta_url?: string | null
+          onedrive_categoria_ruta?: string | null
+          onedrive_validacion_actualizado_en?: string | null
+          onedrive_validacion_error?: string | null
+          onedrive_validacion_estado?: string | null
           plazo_anios?: number | null
           saldo_pendiente?: number | null
           tasa_interes_anual?: number | null

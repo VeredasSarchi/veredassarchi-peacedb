@@ -11,6 +11,7 @@ import VendedorHome from "@/pages/VendedorHome";
 import DashboardPreContratos from "@/pages/DashboardPreContratos";
 import DashboardContratosActivos from "@/pages/DashboardContratosActivos";
 import DashboardContratosAnulados from "@/pages/DashboardContratosAnulados";
+import IngresosCampoSanto from "@/pages/IngresosCampoSanto";
 import ControlCuotas from "@/pages/ControlCuotas";
 import ControlMantenimiento from "@/pages/ControlMantenimiento";
 import PaquetesFunerarios from "@/pages/PaquetesFunerarios";
@@ -94,6 +95,15 @@ function AppLayout() {
             element={
               <ProtectedRoute allowedRoles={["admin", "vendedor"]}>
                 <DashboardContratosAnulados />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/ingresos-campo-santo"
+            element={
+              <ProtectedRoute allowedRoles={["admin"]}>
+                <IngresosCampoSanto />
               </ProtectedRoute>
             }
           />
