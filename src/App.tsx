@@ -11,7 +11,6 @@ import VendedorHome from "@/pages/VendedorHome";
 import DashboardPreContratos from "@/pages/DashboardPreContratos";
 import DashboardContratosActivos from "@/pages/DashboardContratosActivos";
 import DashboardContratosAnulados from "@/pages/DashboardContratosAnulados";
-import IngresosCampoSanto from "@/pages/IngresosCampoSanto";
 import ControlCuotas from "@/pages/ControlCuotas";
 import ControlMantenimiento from "@/pages/ControlMantenimiento";
 import PaquetesFunerarios from "@/pages/PaquetesFunerarios";
@@ -33,7 +32,7 @@ function AppLayout() {
 
       <main className="w-full min-h-screen px-4 sm:px-6 lg:px-8 py-6">
         <Routes>
-          {/* Login: si ya estǭ logueado, lo mandamos al home */}
+          {/* Login: si ya está logueado, lo mandamos al home */}
           <Route
             path="/login"
             element={user ? <Navigate to="/" replace /> : <Login />}
@@ -68,6 +67,7 @@ function AppLayout() {
             element={
               <ProtectedRoute allowedRoles={["admin", "vendedor"]}>
                 <Precontratos />
+                
               </ProtectedRoute>
             }
           />
@@ -95,15 +95,6 @@ function AppLayout() {
             element={
               <ProtectedRoute allowedRoles={["admin", "vendedor"]}>
                 <DashboardContratosAnulados />
-              </ProtectedRoute>
-            }
-          />
-
-          <Route
-            path="/ingresos-campo-santo"
-            element={
-              <ProtectedRoute allowedRoles={["admin"]}>
-                <IngresosCampoSanto />
               </ProtectedRoute>
             }
           />
