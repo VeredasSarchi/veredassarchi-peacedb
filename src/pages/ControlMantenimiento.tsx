@@ -131,6 +131,7 @@ type MaintenanceAlert = {
   numeroContrato: string | null;
   proximaFecha: string;
   dias: number;
+  monthsUntil: number;
   monto: number;
 };
 
@@ -186,6 +187,50 @@ function getDaysUntilDate(value: string | null | undefined): number | null {
   parsed.setHours(0, 0, 0, 0);
 
   return Math.round((parsed.getTime() - today.getTime()) / 86400000);
+}
+
+function getMonthsUntilDate(value: string | null | undefined): number | null {
+  const parsed = parseCalendarDate(value);
+  if (!parsed) return null;
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  parsed.setHours(0, 0, 0, 0);
+
+  if (parsed < today) return null;
+
+  return (
+    (parsed.getFullYear() - today.getFullYear()) * 12 +
+    (parsed.getMonth() - today.getMonth())
+  );
+}
+
+function getNextMaintenanceStartDate(value: string | null | undefined): string | null {
+  const parsed = parseCalendarDate(value);
+  if (!parsed) return null;
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const buildDate = (year: number): Date => {
+    const month = parsed.getMonth();
+    const lastDayOfMonth = new Date(year, month + 1, 0).getDate();
+    const day = Math.min(parsed.getDate(), lastDayOfMonth);
+    const result = new Date(year, month, day);
+    result.setHours(0, 0, 0, 0);
+    return result;
+  };
+
+  const currentYearDate = buildDate(today.getFullYear());
+  const nextDate =
+    currentYearDate >= today
+      ? currentYearDate
+      : buildDate(today.getFullYear() + 1);
+
+  return `${nextDate.getFullYear()}-${String(nextDate.getMonth() + 1).padStart(
+    2,
+    "0",
+  )}-${String(nextDate.getDate()).padStart(2, "0")}`;
 }
 
 function normalizeSearchValue(value: string | null | undefined): string {
@@ -486,15 +531,20 @@ export default function ControlMantenimiento() {
       .filter(
         (row) =>
           row.id_contrato !== null &&
-          row.proxima_fecha_vencimiento &&
+          row.fecha_inicio_mantenimiento &&
           row.configuracion_completa,
       )
       .map((row) => {
-        const dias = getDaysUntilDate(row.proxima_fecha_vencimiento);
+        const nextMaintenanceDate = getNextMaintenanceStartDate(
+          row.fecha_inicio_mantenimiento,
+        );
+        const dias = getDaysUntilDate(nextMaintenanceDate);
+        const monthsUntil = getMonthsUntilDate(nextMaintenanceDate);
         if (
           dias === null ||
+          monthsUntil === null ||
           row.id_contrato === null ||
-          !row.proxima_fecha_vencimiento
+          !nextMaintenanceDate
         ) {
           return null;
         }
@@ -504,8 +554,9 @@ export default function ControlMantenimiento() {
           clienteNombre: row.cliente_nombre || "Cliente sin nombre",
           numeroFormulario: row.numero_formulario,
           numeroContrato: row.numero_contrato,
-          proximaFecha: row.proxima_fecha_vencimiento,
+          proximaFecha: nextMaintenanceDate,
           dias,
+          monthsUntil,
           monto: row.monto_mantenimiento_anual ?? 0,
         } satisfies MaintenanceAlert;
       })
@@ -513,13 +564,13 @@ export default function ControlMantenimiento() {
 
     return {
       "1m": base
-        .filter((row) => row.dias >= 1 && row.dias <= 30)
+        .filter((row) => row.monthsUntil === 1)
         .sort((a, b) => a.dias - b.dias),
       "2m": base
-        .filter((row) => row.dias >= 31 && row.dias <= 60)
+        .filter((row) => row.monthsUntil === 2)
         .sort((a, b) => a.dias - b.dias),
       "3m": base
-        .filter((row) => row.dias >= 61 && row.dias <= 90)
+        .filter((row) => row.monthsUntil === 3)
         .sort((a, b) => a.dias - b.dias),
     };
   }, [rows]);
@@ -943,7 +994,7 @@ export default function ControlMantenimiento() {
           <CardHeader>
             <CardTitle className="text-xl">Alertas de mantenimiento</CardTitle>
             <CardDescription>
-              Contratos cuya proxima cuota anual vence dentro de 1, 2 o 3 meses.
+              Contratos cuya proxima cuota anual vence en los proximos 1, 2 o 3 meses calendario.
             </CardDescription>
           </CardHeader>
           <CardContent>

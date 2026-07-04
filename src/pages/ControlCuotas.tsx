@@ -174,6 +174,13 @@ function formatDateTime(value: string | null | undefined): string {
   return parsed.toLocaleString("es-CR");
 }
 
+function toPaymentTimestamp(value: string): string {
+  const parsed = parseCalendarDate(value);
+  if (!parsed) return value;
+  parsed.setHours(12, 0, 0, 0);
+  return parsed.toISOString();
+}
+
 function formatPercent(value: number | null | undefined): string {
   if (value === null || value === undefined) {
     return "0 %";
@@ -1457,7 +1464,7 @@ export default function ControlCuotas() {
       const { error } = await supabase.rpc("registrar_pago_contrato", {
         p_id_contrato: selectedRow.id_contrato,
         p_monto_total: montoTotal,
-        p_fecha_pago: paymentForm.fechaPago,
+        p_fecha_pago: toPaymentTimestamp(paymentForm.fechaPago),
         p_metodo_pago: paymentForm.metodoPago || null,
         p_referencia: paymentForm.referencia || null,
         p_numero_factura: paymentForm.numeroFactura || null,
