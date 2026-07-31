@@ -13,13 +13,13 @@ const VendedorHome = () => {
   const navigate = useNavigate();
 
   return (
-    <div className="min-h-screen bg-background p-4 md:p-8">
-      <div className="mx-auto w-full px-2 sm:px-4 lg:px-8">
+    <div className="app-page">
+      <div className="app-page-content">
         <div className="mb-8">
-          <h1 className="text-3xl font-bold text-primary mb-2">
+          <h1 className="mb-2 text-2xl font-bold text-primary sm:text-3xl">
             Panel de Vendedor
           </h1>
-          <p className="text-lg text-text-secondary">
+          <p className="text-base text-text-secondary sm:text-lg">
             Accesos rapidos para tu gestion diaria
           </p>
         </div>

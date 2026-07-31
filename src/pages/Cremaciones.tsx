@@ -456,16 +456,16 @@ export default function Cremaciones() {
   };
 
   return (
-    <div className="min-h-screen bg-background p-4 md:p-8">
-      <div className="mx-auto w-full px-2 sm:px-4 lg:px-8">
+    <div className="app-page">
+      <div className="app-page-content">
         <div className="mb-8 flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h1 className="mb-2 text-3xl font-bold text-primary">Cremaciones</h1>
-            <p className="text-lg text-muted-foreground">
+            <h1 className="mb-2 text-2xl font-bold text-primary sm:text-3xl">Cremaciones</h1>
+            <p className="text-base text-muted-foreground sm:text-lg">
               Estructura de carpetas: cremacion, cliente y subcarpetas de Comprobantes/Facturas.
             </p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex w-full flex-wrap gap-2 sm:w-auto">
             <Button variant="outline" onClick={() => navigate("/")}>
               Volver al Menu
             </Button>

@@ -436,12 +436,12 @@ export default function DashboardContratosAnulados() {
   );
 
   return (
-    <div className="min-h-screen bg-background p-4 md:p-8">
-      <div className="mx-auto w-full px-2 sm:px-4 lg:px-8">
+    <div className="app-page">
+      <div className="app-page-content">
         <div className="mb-8 flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h1 className="text-3xl font-bold text-primary mb-2">Contratos Anulados</h1>
-            <p className="text-lg text-muted-foreground">
+            <h1 className="mb-2 text-2xl font-bold text-primary sm:text-3xl">Contratos Anulados</h1>
+            <p className="text-base text-muted-foreground sm:text-lg">
               Consulta de anulaciones y estado de sincronizacion con OneDrive.
             </p>
           </div>

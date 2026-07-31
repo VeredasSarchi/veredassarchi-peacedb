@@ -193,7 +193,6 @@ const REPORT_COLUMN_SORTS: Partial<Record<string, SortColumn>> = {
   cliente: "cliente",
   fecha_firma: "fecha_firma",
   monto_contratado: "monto_contratado",
-  pagado_periodo: "total_pagado_periodo",
   saldo_pendiente: "saldo_pendiente",
   proximo_pago: "proximo_pago",
 };
@@ -206,10 +205,12 @@ const REPORT_COLUMN_WIDTHS: Record<string, string> = {
   primera_cuota: "min-w-[120px]",
   tipo: "min-w-[140px]",
   monto_contratado: "min-w-[140px]",
-  pagado_periodo: "min-w-[140px]",
-  historico: "min-w-[130px]",
-  saldo_pendiente: "min-w-[140px]",
-  monto_vencido: "min-w-[130px]",
+  contrato_cobrado_periodo: "min-w-[160px]",
+  mantenimiento_cobrado_periodo: "min-w-[180px]",
+  historico_contrato: "min-w-[170px]",
+  saldo_pendiente: "min-w-[170px]",
+  mantenimiento_pendiente: "min-w-[190px]",
+  monto_vencido: "min-w-[160px]",
   proximo_pago: "min-w-[120px]",
   ultimo_pago: "min-w-[120px]",
 };
@@ -704,9 +705,18 @@ export default function IngresosCampoSanto() {
         total: "sum",
       },
       {
-        id: "pagado_periodo",
-        header: "Pagado periodo",
-        getValue: (row) => Number(row.total_pagado_periodo ?? 0),
+        id: "contrato_cobrado_periodo",
+        header: "Cobrado por contratos",
+        getValue: (row) => Number(row.total_pagado_contrato_periodo ?? 0),
+        formatValue: (value) => formatCurrency(Number(value ?? 0)),
+        type: "currency",
+        align: "right",
+        total: "sum",
+      },
+      {
+        id: "mantenimiento_cobrado_periodo",
+        header: "Mantenimiento cobrado periodo",
+        getValue: (row) => Number(row.mantenimiento_cobrado_periodo ?? 0),
         formatValue: (value) => formatCurrency(Number(value ?? 0)),
         type: "currency",
         align: "right",
@@ -714,15 +724,15 @@ export default function IngresosCampoSanto() {
       },
       {
         id: "pagos_periodo",
-        header: "Pagos periodo",
+        header: "Movimientos periodo",
         getValue: (row) => Number(row.total_pagos_periodo ?? 0),
         type: "number",
         align: "right",
         total: "sum",
       },
       {
-        id: "historico",
-        header: "Historico",
+        id: "historico_contrato",
+        header: "Cobrado historico contratos",
         getValue: (row) => Number(row.total_pagado_historico ?? 0),
         formatValue: (value) => formatCurrency(Number(value ?? 0)),
         type: "currency",
@@ -731,7 +741,7 @@ export default function IngresosCampoSanto() {
       },
       {
         id: "saldo_pendiente",
-        header: "Saldo pendiente",
+        header: "Saldo pendiente contrato",
         getValue: (row) => Number(row.saldo_pendiente_total ?? 0),
         formatValue: (value) => formatCurrency(Number(value ?? 0)),
         type: "currency",
@@ -739,8 +749,17 @@ export default function IngresosCampoSanto() {
         total: "sum",
       },
       {
+        id: "mantenimiento_pendiente",
+        header: "Mantenimiento por cobrar",
+        getValue: (row) => Number(row.mantenimiento_pendiente ?? 0),
+        formatValue: (value) => formatCurrency(Number(value ?? 0)),
+        type: "currency",
+        align: "right",
+        total: "sum",
+      },
+      {
         id: "monto_vencido",
-        header: "Monto vencido",
+        header: "Monto vencido contratos",
         getValue: (row) => Number(row.monto_vencido_total ?? 0),
         formatValue: (value) => formatCurrency(Number(value ?? 0)),
         type: "currency",
@@ -860,9 +879,9 @@ export default function IngresosCampoSanto() {
   };
 
   return (
-    <div className="min-h-screen bg-background p-4 md:p-8">
-      <div className="mx-auto w-full space-y-6 px-2 sm:px-4 lg:px-8">
-        <div className="flex flex-col gap-4 rounded-2xl border border-border/70 bg-surface p-6 shadow-sm lg:flex-row lg:items-end lg:justify-between">
+    <div className="app-page">
+      <div className="app-page-content space-y-6">
+        <div className="flex flex-col gap-4 rounded-2xl border border-border/70 bg-surface p-4 shadow-sm sm:p-6 lg:flex-row lg:items-end lg:justify-between">
           <div className="space-y-2">
             <Button
               variant="ghost"
@@ -873,7 +892,7 @@ export default function IngresosCampoSanto() {
               Volver al menu
             </Button>
             <div>
-              <h1 className="text-3xl font-bold text-primary">
+              <h1 className="text-2xl font-bold text-primary sm:text-3xl">
                 Ingresos Campo Santo
               </h1>
               <p className="text-sm text-muted-foreground">
@@ -1105,13 +1124,13 @@ export default function IngresosCampoSanto() {
         </Card>
 
         {loading && !summary ? (
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-            {Array.from({ length: 8 }).map((_, index) => (
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            {Array.from({ length: 9 }).map((_, index) => (
               <Skeleton key={index} className="h-32 rounded-xl" />
             ))}
           </div>
         ) : (
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             <MetricCard
               title={
                 appliedFilters.estadoContrato === "VIGENTE"
@@ -1131,16 +1150,16 @@ export default function IngresosCampoSanto() {
               tone="blue"
             />
             <MetricCard
-              title="Recaudado periodo"
-              value={formatCurrency(summary?.total_recaudado_periodo)}
-              hint={`${formatNumber(summary?.total_pagos_periodo)} pagos registrados`}
+              title="Cobrado por contratos"
+              value={formatCurrency(summary?.total_recaudado_contratos_periodo)}
+              hint={`${formatNumber(summary?.total_pagos_periodo)} movimientos en el periodo`}
               icon={TrendingUp}
               tone="emerald"
             />
             <MetricCard
-              title="Saldo pendiente"
+              title="Saldo pendiente de contratos"
               value={formatCurrency(summary?.saldo_pendiente_total)}
-              hint={`Vencido: ${formatCurrency(summary?.monto_vencido_total)}`}
+              hint={`Monto vencido: ${formatCurrency(summary?.monto_vencido_total)}`}
               icon={CalendarDays}
               tone={(summary?.monto_vencido_total ?? 0) > 0 ? "rose" : "amber"}
             />
@@ -1159,16 +1178,28 @@ export default function IngresosCampoSanto() {
               tone="blue"
             />
             <MetricCard
-              title="Mantenimiento cobrado"
+              title="Mantenimiento recaudado"
               value={formatCurrency(summary?.mantenimiento_recaudado_periodo)}
-              hint={`Pendiente: ${formatCurrency(summary?.mantenimiento_pendiente)}`}
+              hint="Cobrado dentro del periodo filtrado"
               icon={CalendarDays}
               tone="emerald"
             />
             <MetricCard
-              title="Promedio por contrato"
-              value={formatCurrency(summary?.promedio_ingreso_por_contrato)}
-              hint={`Mes actual en rango: ${formatCurrency(summary?.ingreso_mes_actual)}`}
+              title="Mantenimiento por cobrar"
+              value={formatCurrency(summary?.mantenimiento_pendiente)}
+              hint="No forma parte del saldo del contrato"
+              icon={CalendarDays}
+              tone="amber"
+            />
+            <MetricCard
+              title="Promedio cobrado por contrato"
+              value={formatCurrency(
+                (summary?.contratos_filtrados ?? 0) > 0
+                  ? Number(summary?.total_recaudado_contratos_periodo ?? 0) /
+                      Number(summary?.contratos_filtrados ?? 1)
+                  : 0,
+              )}
+              hint="Solo cobros del contrato en el periodo"
               icon={Banknote}
               tone="amber"
             />
@@ -1228,39 +1259,45 @@ export default function IngresosCampoSanto() {
 
           <Card className="border-border/70 bg-surface shadow-sm">
             <CardHeader>
-              <CardTitle className="text-xl">Composicion</CardTitle>
-              <CardDescription>Desglose del periodo filtrado.</CardDescription>
+              <CardTitle className="text-xl">Desglose de ingresos</CardTitle>
+              <CardDescription>
+                El mantenimiento se contabiliza por separado de los cobros del contrato.
+              </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               {[
                 {
-                  label: "Contratos",
+                  label: "Cobros de contratos",
                   value: summary?.total_recaudado_contratos_periodo,
                   className: "bg-emerald-500",
+                  total: summary?.total_recaudado_periodo,
+                  hint: "No incluye mantenimiento",
                 },
                 {
-                  label: "Mantenimiento",
+                  label: "Cobros de mantenimiento",
                   value: summary?.mantenimiento_recaudado_periodo,
                   className: "bg-sky-500",
+                  total: summary?.total_recaudado_periodo,
+                  hint: "Contabilizado por separado",
                 },
                 {
-                  label: "Intereses",
-                  value: summary?.interes_cobrado_periodo,
-                  className: "bg-amber-500",
-                },
-                {
-                  label: "Otros",
+                  label: "Otros cobros del contrato",
                   value: summary?.otros_cobrados_periodo,
                   className: "bg-slate-500",
+                  total: summary?.total_recaudado_contratos_periodo,
+                  hint: "Incluido en cobros de contratos",
                 },
               ].map((item) => {
-                const total = Number(summary?.total_recaudado_periodo ?? 0);
+                const total = Number(item.total ?? 0);
                 const value = Number(item.value ?? 0);
                 const percent = total > 0 ? Math.min((value / total) * 100, 100) : 0;
                 return (
                   <div key={item.label} className="space-y-2">
                     <div className="flex items-center justify-between gap-3 text-sm">
-                      <span className="font-medium text-foreground">{item.label}</span>
+                      <div>
+                        <p className="font-medium text-foreground">{item.label}</p>
+                        <p className="text-xs text-muted-foreground">{item.hint}</p>
+                      </div>
                       <span className="text-muted-foreground">{formatCurrency(value)}</span>
                     </div>
                     <div className="h-2 overflow-hidden rounded-full bg-muted">
@@ -1273,7 +1310,9 @@ export default function IngresosCampoSanto() {
                 );
               })}
               <div className="rounded-lg border border-border/70 bg-muted/20 p-3 text-sm">
-                <p className="text-muted-foreground">Ingreso anual actual en rango</p>
+                <p className="text-muted-foreground">
+                  Ingreso total anual en rango (contratos + mantenimiento)
+                </p>
                 <p className="mt-1 text-xl font-semibold text-foreground">
                   {formatCurrency(summary?.ingreso_anio_actual)}
                 </p>

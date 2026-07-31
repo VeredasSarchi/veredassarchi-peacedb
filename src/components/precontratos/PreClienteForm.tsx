@@ -32,6 +32,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { supabase } from "@/integrations/supabase/client";
 import type { Tables, TablesInsert } from "@/integrations/supabase/types";
+import { calculateMaintenanceVat, MAINTENANCE_VAT_RATE } from "@/lib/maintenance-vat";
 import { toast } from "sonner";
 
 const preClienteSchema = z.object({
@@ -373,6 +374,10 @@ export function PreClienteForm({
   const primaInput = form.watch("prima");
   const tasaAnualInput = form.watch("tasa_interes_anual");
   const mantenimientoAnualInput = form.watch("monto_mantenimiento_anual");
+  const mantenimientoVatBreakdown = useMemo(
+    () => calculateMaintenanceVat(parseNumber(mantenimientoAnualInput)),
+    [mantenimientoAnualInput],
+  );
 
   const hasLote = enabledProductTypes.includes("LOTE");
   const hasCenizario = enabledProductTypes.includes("CENIZARIO");
@@ -485,7 +490,7 @@ export function PreClienteForm({
       form.setValue("cuota_fija", cuotaStr, { shouldDirty: false });
     }
 
-    const mantenimientoAnual = parseNumber(mantenimientoAnualInput);
+    const mantenimientoAnual = calculateMaintenanceVat(parseNumber(mantenimientoAnualInput))?.totalAmount;
     const mantenimientoMensual =
       mantenimientoAnual && mantenimientoAnual > 0 ? formatCRC(mantenimientoAnual / 12) : "";
     if (form.getValues("monto_mantenimiento_mensual") !== mantenimientoMensual) {
@@ -972,6 +977,8 @@ export function PreClienteForm({
       const anioInicioMantenimientoCompat =
         getMaintenanceYearFromDate(fechaInicioMantenimiento || undefined) ??
         parseNumber(values.anio_inicio_mantenimiento);
+      const mantenimientoAnualConIva =
+        calculateMaintenanceVat(parseNumber(values.monto_mantenimiento_anual))?.totalAmount ?? null;
 
       const contratoPayload: PreClienteContratoDraft = {
         numero_contrato: numeroContrato,
@@ -987,7 +994,7 @@ export function PreClienteForm({
         monto_entregado_inicial: parseNumber(values.prima),
         saldo_pendiente: parseNumber(values.saldo),
         cantidad_lotes: parseNumber(values.cantidad_lotes),
-        monto_mantenimiento_anual: parseNumber(values.monto_mantenimiento_anual),
+        monto_mantenimiento_anual: mantenimientoAnualConIva,
         fecha_inicio_mantenimiento: fechaInicioMantenimiento,
         anio_inicio_mantenimiento: anioInicioMantenimientoCompat,
         observaciones_contrato: values.observaciones || null,
@@ -1829,24 +1836,54 @@ export function PreClienteForm({
               control={form.control}
               name="monto_mantenimiento_anual"
               render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Monto Mantenimiento Anual + IVA (CRC)</FormLabel>
-                  <FormControl>
-                    <Input
-                      type="text"
-                      inputMode="decimal"
-                      placeholder="¢ 0,00"
-                      {...field}
-                      onFocus={() => handleCurrencyFocus("monto_mantenimiento_anual")}
-                      onBlur={() => {
-                        field.onBlur();
-                        handleCurrencyBlur("monto_mantenimiento_anual");
-                      }}
-                      onChange={(event) => {
-                        field.onChange(event.target.value.replace(/[^\d.,-]/g, ""));
-                      }}
-                    />
-                  </FormControl>
+                <FormItem className="md:col-span-2">
+                  <FormLabel>Monto Mantenimiento Anual antes de IVA (CRC)</FormLabel>
+                  <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(260px,0.8fr)]">
+                    <div className="space-y-2">
+                      <FormControl>
+                        <Input
+                          type="text"
+                          inputMode="decimal"
+                          placeholder="¢ 0,00"
+                          {...field}
+                          onFocus={() => handleCurrencyFocus("monto_mantenimiento_anual")}
+                          onBlur={() => {
+                            field.onBlur();
+                            handleCurrencyBlur("monto_mantenimiento_anual");
+                          }}
+                          onChange={(event) => {
+                            field.onChange(event.target.value.replace(/[^\d.,-]/g, ""));
+                          }}
+                        />
+                      </FormControl>
+                      <p className="text-xs text-muted-foreground">
+                        Digite el monto base. El IVA se calcula automáticamente.
+                      </p>
+                    </div>
+                    <div
+                      className="rounded-lg border border-primary/20 bg-primary/5 px-4 py-3"
+                      aria-live="polite"
+                    >
+                      <div className="flex items-center justify-between gap-4 text-sm">
+                        <span className="text-muted-foreground">
+                          IVA ({MAINTENANCE_VAT_RATE * 100}%)
+                        </span>
+                        <span className="font-medium text-foreground">
+                          {formatCRC(mantenimientoVatBreakdown?.vatAmount ?? 0)}
+                        </span>
+                      </div>
+                      <div className="mt-2 flex items-center justify-between gap-4 border-t border-primary/15 pt-2">
+                        <span className="text-sm font-semibold text-foreground">Total con IVA</span>
+                        <span className="text-base font-semibold text-primary">
+                          {formatCRC(mantenimientoVatBreakdown?.totalAmount ?? 0)}
+                        </span>
+                      </div>
+                      <p className="mt-2 text-xs text-muted-foreground">
+                        Este total corresponde a una sola anualidad y se cobrará
+                        una vez por año.
+                      </p>
+                    </div>
+                  </div>
                   <FormMessage />
                 </FormItem>
               )}
@@ -1857,10 +1894,13 @@ export function PreClienteForm({
               name="fecha_inicio_mantenimiento"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Fecha de Inicio de Mantenimiento</FormLabel>
+                  <FormLabel>Fecha del Primer Cobro de Mantenimiento</FormLabel>
                   <FormControl>
                     <Input type="date" {...field} />
                   </FormControl>
+                  <p className="text-xs text-muted-foreground">
+                    Esta fecha define el aniversario de los cobros anuales.
+                  </p>
                   <FormMessage />
                 </FormItem>
               )}
@@ -2029,7 +2069,12 @@ export function PreClienteForm({
         </div>
 
         <div className="flex justify-end">
-          <Button type="submit" size="lg" disabled={form.formState.isSubmitting}>
+          <Button
+            type="submit"
+            size="lg"
+            className="w-full sm:w-auto"
+            disabled={form.formState.isSubmitting}
+          >
             {submitButtonLabel}
           </Button>
         </div>

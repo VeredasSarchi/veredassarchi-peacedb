@@ -213,24 +213,29 @@ export default function Precontratos() {
   ];
 
   return (
-    <div className="min-h-screen bg-background p-4 md:p-8">
-      <div className="mx-auto w-full px-2 sm:px-4 lg:px-8">
-        <div className="mb-8 flex items-start justify-between gap-4">
-          <div>
-            <h1 className="text-3xl font-bold text-foreground mb-2">Precontratos</h1>
+    <div className="app-page">
+      <div className="app-page-content">
+        <div className="mb-6 flex flex-col gap-4 sm:mb-8 sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0">
+            <h1 className="mb-2 text-2xl font-bold text-foreground sm:text-3xl">Precontratos</h1>
             <p className="text-muted-foreground">
               Sistema de registro de precontratos para Jardines de Paz VeredasSarchi
             </p>
           </div>
-          <Button type="button" variant="outline" onClick={() => navigate(menuPath)}>
+          <Button
+            type="button"
+            variant="outline"
+            className="w-full sm:w-auto"
+            onClick={() => navigate(menuPath)}
+          >
             Volver al Menu
           </Button>
         </div>
 
-        <div className="mb-8 flex items-center justify-center gap-2">
+        <div className="mb-6 grid grid-cols-3 items-start gap-2 sm:mb-8 sm:flex sm:items-center sm:justify-center">
           {steps.map((step, index) => (
-            <div key={step.id} className="flex items-center">
-              <div className="flex flex-col items-center">
+            <div key={step.id} className="flex min-w-0 items-center justify-center">
+              <div className="flex min-w-0 flex-col items-center text-center">
                 <div
                   className={`flex h-10 w-10 items-center justify-center rounded-full border-2 transition-colors ${
                     completedSteps.has(step.id as FormStep)
@@ -247,7 +252,7 @@ export default function Precontratos() {
                   )}
                 </div>
                 <span
-                  className={`mt-2 text-xs font-medium ${
+                  className={`mt-2 max-w-full break-words text-[11px] font-medium leading-tight sm:text-xs ${
                     currentStep === step.id ? "text-primary" : "text-muted-foreground"
                   }`}
                 >
@@ -263,7 +268,7 @@ export default function Precontratos() {
                   )}
                 </span>
               </div>
-              {index < steps.length - 1 && <div className="mx-4 h-0.5 w-12 bg-muted" />}
+              {index < steps.length - 1 && <div className="mx-4 hidden h-0.5 w-12 bg-muted sm:block" />}
             </div>
           ))}
         </div>

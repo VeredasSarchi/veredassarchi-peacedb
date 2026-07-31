@@ -141,11 +141,11 @@ export function PreAutorizadoForm({
           </div>
         ))}
 
-        <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
           <Button
             type="button"
             variant="secondary"
-            className="border-input bg-background text-foreground hover:bg-muted"
+            className="w-full border-input bg-background text-foreground hover:bg-muted sm:w-auto"
             onClick={handleGoBack}
           >
             Volver a Pre-Cliente
@@ -154,14 +154,14 @@ export function PreAutorizadoForm({
           <Button
             type="button"
             variant="secondary"
-            className="border-input bg-background text-foreground hover:bg-muted"
+            className="w-full border-input bg-background text-foreground hover:bg-muted sm:w-auto"
             onClick={() => append({ nombre: "", cedula: "" })}
             disabled={fields.length >= 4}
           >
             Agregar otro pre-autorizado ({fields.length}/4)
           </Button>
 
-          <div className="flex gap-2">
+          <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto">
             <Button
               type="button"
               variant="secondary"

@@ -233,11 +233,11 @@ export default function Jardines() {
   }
 
   return (
-    <div className="min-h-screen bg-background p-4 md:p-8">
-      <div className="mx-auto w-full px-2 sm:px-4 lg:px-8">
+    <div className="app-page">
+      <div className="app-page-content">
         <div className="mb-8 flex flex-wrap items-start justify-between gap-4">
           <div>
-            <h1 className="text-3xl font-bold text-foreground mb-2">
+            <h1 className="mb-2 text-2xl font-bold text-foreground sm:text-3xl">
               Jardines
             </h1>
             <p className="text-muted-foreground">

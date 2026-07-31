@@ -128,11 +128,11 @@ export function BeneficiarioForm({
           />
         </div>
 
-        <div className="flex justify-between">
+        <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-between">
           <Button
             type="button"
             variant="secondary"
-            className="border-input bg-background text-foreground hover:bg-muted"
+            className="w-full border-input bg-background text-foreground hover:bg-muted sm:w-auto"
             disabled={disabled}
             onClick={handleGoBack}
           >
@@ -141,7 +141,7 @@ export function BeneficiarioForm({
           <Button
             type="submit"
             variant="default"
-            className="bg-primary text-primary-foreground"
+            className="w-full bg-primary text-primary-foreground sm:w-auto"
             disabled={disabled}
           >
             {disabled ? "Guardando..." : "Completar"}

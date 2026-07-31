@@ -76,16 +76,16 @@ export default function OneDriveAdmin() {
     : "Sin registro";
 
   return (
-    <div className="min-h-screen bg-background p-4 md:p-8">
-      <div className="mx-auto w-full max-w-4xl px-2 sm:px-4 lg:px-8">
-        <div className="mb-8 flex items-start justify-between gap-4">
-          <div>
-            <h1 className="text-3xl font-bold text-primary mb-2">Conexion con OneDrive</h1>
+    <div className="app-page">
+      <div className="mx-auto w-full min-w-0 max-w-4xl">
+        <div className="mb-6 flex flex-col gap-4 sm:mb-8 sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0">
+            <h1 className="mb-2 text-2xl font-bold text-primary sm:text-3xl">Conexion con OneDrive</h1>
             <p className="text-muted-foreground">
               Administra la autorizacion OAuth usada para crear carpetas desde el sistema.
             </p>
           </div>
-          <Button type="button" variant="outline" onClick={() => navigate("/")}>
+          <Button type="button" variant="outline" className="w-full sm:w-auto" onClick={() => navigate("/")}>
             Volver al Menu
           </Button>
         </div>

@@ -205,34 +205,6 @@ function getMonthsUntilDate(value: string | null | undefined): number | null {
   );
 }
 
-function getNextMaintenanceStartDate(value: string | null | undefined): string | null {
-  const parsed = parseCalendarDate(value);
-  if (!parsed) return null;
-
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-
-  const buildDate = (year: number): Date => {
-    const month = parsed.getMonth();
-    const lastDayOfMonth = new Date(year, month + 1, 0).getDate();
-    const day = Math.min(parsed.getDate(), lastDayOfMonth);
-    const result = new Date(year, month, day);
-    result.setHours(0, 0, 0, 0);
-    return result;
-  };
-
-  const currentYearDate = buildDate(today.getFullYear());
-  const nextDate =
-    currentYearDate >= today
-      ? currentYearDate
-      : buildDate(today.getFullYear() + 1);
-
-  return `${nextDate.getFullYear()}-${String(nextDate.getMonth() + 1).padStart(
-    2,
-    "0",
-  )}-${String(nextDate.getDate()).padStart(2, "0")}`;
-}
-
 function normalizeSearchValue(value: string | null | undefined): string {
   if (!value) return "";
   return value
@@ -356,11 +328,11 @@ export default function ControlMantenimiento() {
         throw error;
       }
     } catch (error) {
-      console.error("Error sincronizando cuotas de mantenimiento", error);
+      console.error("Error sincronizando cobros de mantenimiento", error);
       toast.error(
         getErrorMessage(
           error,
-          "No se pudieron sincronizar las cuotas de mantenimiento",
+          "No se pudieron sincronizar los cobros de mantenimiento",
         ),
       );
     } finally {
@@ -531,13 +503,11 @@ export default function ControlMantenimiento() {
       .filter(
         (row) =>
           row.id_contrato !== null &&
-          row.fecha_inicio_mantenimiento &&
+          row.proxima_fecha_vencimiento &&
           row.configuracion_completa,
       )
       .map((row) => {
-        const nextMaintenanceDate = getNextMaintenanceStartDate(
-          row.fecha_inicio_mantenimiento,
-        );
+        const nextMaintenanceDate = row.proxima_fecha_vencimiento;
         const dias = getDaysUntilDate(nextMaintenanceDate);
         const monthsUntil = getMonthsUntilDate(nextMaintenanceDate);
         if (
@@ -557,7 +527,7 @@ export default function ControlMantenimiento() {
           proximaFecha: nextMaintenanceDate,
           dias,
           monthsUntil,
-          monto: row.monto_mantenimiento_anual ?? 0,
+          monto: row.total_pendiente ?? row.monto_mantenimiento_anual ?? 0,
         } satisfies MaintenanceAlert;
       })
       .filter((row): row is MaintenanceAlert => row !== null);
@@ -626,13 +596,34 @@ export default function ControlMantenimiento() {
     return map;
   }, [detailCuotas]);
 
-  const selectedPendingMaintenance = useMemo(() => {
-    return detailCuotas.reduce(
-      (acc, cuota) => {
-        if (cuota.estado === "PAGADA" || cuota.estado === "ANULADA") {
-          return acc;
-        }
+  const currentMaintenanceCharges = useMemo(
+    () =>
+      detailCuotas
+        .filter(
+          (cuota) =>
+            cuota.estado !== "PAGADA" &&
+            cuota.estado !== "ANULADA" &&
+            (cuota.monto_programado ?? 0) - (cuota.monto_pagado ?? 0) > 0.009,
+        )
+        .sort((a, b) => {
+          const aTime =
+            parseCalendarDate(a.fecha_vencimiento)?.getTime() ??
+            Number.MAX_SAFE_INTEGER;
+          const bTime =
+            parseCalendarDate(b.fecha_vencimiento)?.getTime() ??
+            Number.MAX_SAFE_INTEGER;
+          return (
+            aTime - bTime ||
+            Number(a.numero_periodo ?? 0) - Number(b.numero_periodo ?? 0)
+          );
+        })
+        .slice(0, 1),
+    [detailCuotas],
+  );
 
+  const selectedPendingMaintenance = useMemo(() => {
+    return currentMaintenanceCharges.reduce(
+      (acc, cuota) => {
         const pendiente = Math.max(
           (cuota.monto_programado ?? 0) - (cuota.monto_pagado ?? 0),
           0,
@@ -642,7 +633,7 @@ export default function ControlMantenimiento() {
       },
       { total: 0 },
     );
-  }, [detailCuotas]);
+  }, [currentMaintenanceCharges]);
 
   const refreshSelected = useCallback(async () => {
     await loadResumen();
@@ -655,7 +646,7 @@ export default function ControlMantenimiento() {
     if (!selectedRow) return;
 
     const rowsToExport =
-      selectedDetailTab === "cuotas" ? detailCuotas : detailPagos;
+      selectedDetailTab === "cuotas" ? currentMaintenanceCharges : detailPagos;
     if (rowsToExport.length === 0) {
       toast.error("No hay datos para exportar en esta pestaña");
       return;
@@ -746,14 +737,14 @@ export default function ControlMantenimiento() {
 
         await exportExcelReport({
           systemName: "Veredas Sarchi - Poas",
-          title: `Cuotas de mantenimiento - ${selectedRow.cliente_nombre || "Cliente"}`,
-          sheetName: "Cuotas mantenimiento",
-          fileBaseName: "Control_Mantenimiento_Cuotas",
+          title: `Proximo cobro de mantenimiento - ${selectedRow.cliente_nombre || "Cliente"}`,
+          sheetName: "Proximo cobro",
+          fileBaseName: "Control_Mantenimiento_Proximo_Cobro",
           generatedAt: new Date(),
           generatedBy: user?.email ?? role ?? "No disponible",
           filters: baseFilters,
           columns,
-          rows: detailCuotas,
+          rows: currentMaintenanceCharges,
         } satisfies ReportPayload<ControlMantenimientoCuotaRow>);
       } else {
         type PaymentExportRow = MantenimientoPagoRow & {
@@ -858,7 +849,7 @@ export default function ControlMantenimiento() {
     }
   }, [
     cuotasById,
-    detailCuotas,
+    currentMaintenanceCharges,
     detailPagos,
     paymentApplicationsById,
     paymentDisplayNumberById,
@@ -920,9 +911,9 @@ export default function ControlMantenimiento() {
   }, [paymentForm, refreshSelected, role, selectedRow, user]);
 
   return (
-    <div className="min-h-screen bg-background p-4 md:p-8">
-      <div className="mx-auto w-full space-y-6 px-2 sm:px-4 lg:px-8">
-        <div className="flex flex-col gap-4 rounded-2xl border border-border/70 bg-surface p-6 shadow-sm lg:flex-row lg:items-end lg:justify-between">
+    <div className="app-page">
+      <div className="app-page-content space-y-6">
+        <div className="flex flex-col gap-4 rounded-2xl border border-border/70 bg-surface p-4 shadow-sm sm:p-6 lg:flex-row lg:items-end lg:justify-between">
           <div className="space-y-2">
             <Button
               variant="ghost"
@@ -933,12 +924,11 @@ export default function ControlMantenimiento() {
               Volver al menu
             </Button>
             <div>
-              <h1 className="text-3xl font-bold text-primary">
-                Cuotas de mantenimiento
+              <h1 className="text-2xl font-bold text-primary sm:text-3xl">
+                Control de mantenimiento
               </h1>
               <p className="text-sm text-muted-foreground">
-                Control anual de mantenimiento para contratos activos con lotes y
-                cenizarios.
+                Un cobro anual vigente por contrato, renovado al completar cada pago.
               </p>
             </div>
           </div>
@@ -971,22 +961,22 @@ export default function ControlMantenimiento() {
           <SummaryMetricCard
             title="Configurados"
             value={String(dashboardSummary.configurados)}
-            hint="Con monto anual y fecha de inicio listos."
+            hint="Con monto anual y fecha del primer cobro."
           />
           <SummaryMetricCard
             title="Con vencidas"
             value={String(dashboardSummary.conVencidas)}
-            hint="Cuotas anuales con atraso."
+            hint="Cobros anuales actuales con atraso."
           />
           <SummaryMetricCard
             title="Monto vencido"
             value={formatCurrency(dashboardSummary.montoVencido)}
-            hint="Pendiente solo de cuotas vencidas."
+            hint="Pendiente del cobro anual vencido."
           />
           <SummaryMetricCard
             title="Pendiente total"
             value={formatCurrency(dashboardSummary.totalPendiente)}
-            hint="Suma de cuotas anuales aun no cubiertas."
+            hint="Una anualidad abierta por contrato."
           />
         </div>
 
@@ -994,7 +984,7 @@ export default function ControlMantenimiento() {
           <CardHeader>
             <CardTitle className="text-xl">Alertas de mantenimiento</CardTitle>
             <CardDescription>
-              Contratos cuya proxima cuota anual vence en los proximos 1, 2 o 3 meses calendario.
+              Contratos cuyo proximo cobro anual vence en los proximos 1, 2 o 3 meses calendario.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -1005,7 +995,7 @@ export default function ControlMantenimiento() {
               }
               className="w-full"
             >
-              <TabsList className="grid w-full grid-cols-3">
+              <TabsList className="grid h-auto w-full grid-cols-1 gap-1 sm:grid-cols-3">
                 <TabsTrigger value="1m">
                   Vence en 1 mes ({alertBuckets["1m"].length})
                 </TabsTrigger>
@@ -1023,7 +1013,7 @@ export default function ControlMantenimiento() {
                     {alertBuckets[category].length === 0 ? (
                       <EmptyPanel
                         title="Sin alertas en este rango"
-                        description="No hay contratos con proxima cuota anual dentro de este periodo."
+                        description="No hay contratos con un cobro anual dentro de este periodo."
                       />
                     ) : (
                       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
@@ -1056,10 +1046,10 @@ export default function ControlMantenimiento() {
                             </div>
                             <div className="mt-3 space-y-1 text-sm">
                               <p className="text-foreground">
-                                Proxima cuota: {formatDate(alert.proximaFecha)}
+                                Proximo cobro: {formatDate(alert.proximaFecha)}
                               </p>
                               <p className="text-muted-foreground">
-                                Monto anual: {formatCurrency(alert.monto)}
+                                Pendiente anual: {formatCurrency(alert.monto)}
                               </p>
                             </div>
                           </button>
@@ -1079,7 +1069,7 @@ export default function ControlMantenimiento() {
               <div>
                 <CardTitle className="text-xl">Contratos</CardTitle>
                 <CardDescription>
-                  Selecciona un contrato para revisar sus cuotas de mantenimiento.
+                  Selecciona un contrato para revisar su proximo cobro anual.
                 </CardDescription>
               </div>
               <div className="relative">
@@ -1152,7 +1142,7 @@ export default function ControlMantenimiento() {
                       <div className="mt-3 grid grid-cols-2 gap-3 text-sm">
                         <div>
                           <p className="text-xs uppercase tracking-wide text-muted-foreground">
-                            Proxima cuota
+                            Proximo cobro
                           </p>
                           <p className="font-medium text-foreground">
                             {formatDate(row.proxima_fecha_vencimiento)}
@@ -1180,7 +1170,7 @@ export default function ControlMantenimiento() {
                 <CardContent className="pt-6">
                   <EmptyPanel
                     title="Selecciona un contrato"
-                    description="Aqui veras las cuotas y pagos de mantenimiento."
+                    description="Aqui veras el proximo cobro y los pagos de mantenimiento."
                   />
                 </CardContent>
               </Card>
@@ -1227,10 +1217,20 @@ export default function ControlMantenimiento() {
                       </Button>
                       <Button
                         onClick={() => {
-                          setPaymentForm(getInitialPaymentForm());
+                          setPaymentForm({
+                            ...getInitialPaymentForm(),
+                            montoTotal:
+                              selectedPendingMaintenance.total > 0
+                                ? String(selectedPendingMaintenance.total)
+                                : "",
+                          });
                           setPaymentOpen(true);
                         }}
-                        disabled={!selectedRow.configuracion_completa}
+                        disabled={
+                          detailLoading ||
+                          !selectedRow.configuracion_completa ||
+                          selectedPendingMaintenance.total <= 0
+                        }
                       >
                         <DollarSign className="mr-2 h-4 w-4" />
                         Registrar pago
@@ -1241,7 +1241,7 @@ export default function ControlMantenimiento() {
                     <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
                       <div className="rounded-xl border border-border/70 bg-muted/20 p-4">
                         <p className="text-xs uppercase tracking-wide text-muted-foreground">
-                          Inicio mantenimiento
+                          Primer cobro registrado
                         </p>
                         <p className="mt-1 text-xl font-semibold text-foreground">
                           {formatDate(selectedRow.fecha_inicio_mantenimiento)}
@@ -1257,7 +1257,7 @@ export default function ControlMantenimiento() {
                       </div>
                       <div className="rounded-xl border border-border/70 bg-muted/20 p-4">
                         <p className="text-xs uppercase tracking-wide text-muted-foreground">
-                          Proxima cuota
+                          Proximo cobro
                         </p>
                         <p className="mt-1 text-xl font-semibold text-foreground">
                           {formatDate(selectedRow.proxima_fecha_vencimiento)}
@@ -1278,8 +1278,8 @@ export default function ControlMantenimiento() {
                         <div className="flex items-start gap-2">
                           <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
                           <p>
-                            Este contrato necesita monto anual y fecha de inicio
-                            de mantenimiento para generar sus cuotas.
+                            Este contrato necesita monto anual y fecha del primer
+                            cobro de mantenimiento.
                           </p>
                         </div>
                       </div>
@@ -1304,7 +1304,7 @@ export default function ControlMantenimiento() {
                         exportingExcel ||
                         !selectedRow.configuracion_completa ||
                         (selectedDetailTab === "cuotas"
-                          ? detailCuotas.length === 0
+                          ? currentMaintenanceCharges.length === 0
                           : detailPagos.length === 0)
                       }
                     >
@@ -1325,7 +1325,7 @@ export default function ControlMantenimiento() {
                     ) : !selectedRow.configuracion_completa ? (
                       <EmptyPanel
                         title="Configuracion pendiente"
-                        description="Completa fecha de inicio y monto anual para habilitar este modulo."
+                        description="Completa la fecha del primer cobro y el monto anual para habilitar este modulo."
                       />
                     ) : (
                       <Tabs
@@ -1335,15 +1335,15 @@ export default function ControlMantenimiento() {
                         }
                         className="w-full"
                       >
-                        <TabsList className="grid w-full grid-cols-2">
-                          <TabsTrigger value="cuotas">Cuotas</TabsTrigger>
+                        <TabsList className="grid h-auto w-full grid-cols-2">
+                          <TabsTrigger value="cuotas">Proximo cobro</TabsTrigger>
                           <TabsTrigger value="pagos">Pagos</TabsTrigger>
                         </TabsList>
 
                         <TabsContent value="cuotas">
-                          {detailCuotas.length === 0 ? (
+                          {currentMaintenanceCharges.length === 0 ? (
                             <EmptyPanel
-                              title="Sin cuotas generadas"
+                              title="Sin cobro pendiente"
                               description="Usa el boton Sincronizar si acabas de configurar el mantenimiento."
                             />
                           ) : (
@@ -1361,7 +1361,7 @@ export default function ControlMantenimiento() {
                                 </TableRow>
                               </TableHeader>
                               <TableBody>
-                                {detailCuotas.map((cuota) => {
+                                {currentMaintenanceCharges.map((cuota) => {
                                   const pendiente = Math.max(
                                     (cuota.monto_programado ?? 0) -
                                       (cuota.monto_pagado ?? 0),
@@ -1526,8 +1526,8 @@ export default function ControlMantenimiento() {
           <DialogHeader>
             <DialogTitle>Registrar pago de mantenimiento</DialogTitle>
             <DialogDescription>
-              El pago se aplicará a las cuotas anuales pendientes en orden
-              cronologico.
+              El pago se aplicará únicamente al cobro anual pendiente. Al
+              completarlo se generará el cobro del siguiente año.
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 md:grid-cols-2">

@@ -79,8 +79,8 @@ export default function OneDriveCallback() {
   }, [navigate, searchParams]);
 
   return (
-    <div className="min-h-screen bg-background p-4 md:p-8">
-      <div className="mx-auto flex min-h-[60vh] max-w-xl items-center justify-center">
+    <div className="app-page">
+      <div className="mx-auto flex w-full max-w-xl flex-1 items-center justify-center">
         <Card className="w-full">
           <CardHeader>
             <CardTitle>Conectando OneDrive</CardTitle>

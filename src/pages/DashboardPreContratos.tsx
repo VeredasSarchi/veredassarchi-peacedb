@@ -62,6 +62,7 @@ import { PreClienteForm, type PreClienteFormValues, type PreClienteSubmitPayload
 import type { ProductType } from "@/components/precontratos/PreClienteForm";
 import { buildOneDriveFolderPayload } from "@/lib/contract-onedrive";
 import { formatContractDisplayLabel } from "@/lib/contract-display";
+import { getMaintenanceBaseFromVatIncludedTotal } from "@/lib/maintenance-vat";
 import { cn } from "@/lib/utils";
 
 type ContratoRow = Tables<"contrato"> & {
@@ -555,7 +556,9 @@ export default function DashboardPreContratos() {
       tasa_interes_anual: toPreClienteNumber(record.contrato.tasa_interes_anual),
       prima: toPreClienteNumber(record.contrato.monto_entregado_inicial),
       saldo: toPreClienteNumber(record.contrato.saldo_pendiente),
-      monto_mantenimiento_anual: toPreClienteNumber(record.contrato.monto_mantenimiento_anual),
+      monto_mantenimiento_anual: toPreClienteNumber(
+        getMaintenanceBaseFromVatIncludedTotal(record.contrato.monto_mantenimiento_anual),
+      ),
       fecha_inicio_mantenimiento: getMaintenanceStartInputValue(
         record.contrato.fecha_inicio_mantenimiento,
         record.contrato.anio_inicio_mantenimiento,
@@ -1113,14 +1116,14 @@ export default function DashboardPreContratos() {
 
   return (
     <TooltipProvider delayDuration={180}>
-    <div className="min-h-screen bg-background p-4 md:p-8">
-      <div className="mx-auto w-full px-2 sm:px-4 lg:px-8">
+    <div className="app-page">
+      <div className="app-page-content">
         <div className="mb-8 flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h1 className="text-3xl font-bold text-primary mb-2">
+            <h1 className="mb-2 text-2xl font-bold text-primary sm:text-3xl">
               {isAdmin ? "Formalizar Pre-Contratos" : "Listado de Pre-Contratos"}
             </h1>
-            <p className="text-lg text-muted-foreground">
+            <p className="text-base text-muted-foreground sm:text-lg">
               {isAdmin
                 ? "Carpeta por persona con opciones para editar, eliminar o formalizar."
                 : "Carpeta por persona para consulta general de precontratos (solo lectura)."}
@@ -1339,7 +1342,7 @@ export default function DashboardPreContratos() {
                                     tooltip="Tasa anual registrada para el calculo financiero."
                                   />
                                   <InfoLine label="Cantidad lotes" value={cantidadLotes} />
-                                  <InfoLine label="Inicio mantenimiento" value={anioMantenimiento} />
+                                  <InfoLine label="Primer cobro mantenimiento" value={anioMantenimiento} />
                                   <InfoLine label="Vendedor" value={displayValue(item.vendedor?.nombre_completo, "No asignado")} />
                                   <InfoLine
                                     label="ID interno"

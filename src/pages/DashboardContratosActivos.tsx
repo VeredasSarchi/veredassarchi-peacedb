@@ -1807,12 +1807,12 @@ export default function DashboardContratosActivos() {
 
   return (
     <TooltipProvider delayDuration={180}>
-    <div className="min-h-screen bg-background p-4 md:p-8">
-      <div className="mx-auto w-full px-2 sm:px-4 lg:px-8">
+    <div className="app-page">
+      <div className="app-page-content">
         <div className="mb-8 flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h1 className="text-3xl font-bold text-primary mb-2">Contratos Activos</h1>
-            <p className="text-lg text-muted-foreground">
+            <h1 className="mb-2 text-2xl font-bold text-primary sm:text-3xl">Contratos Activos</h1>
+            <p className="text-base text-muted-foreground sm:text-lg">
               Vista administrativa alineada con la estructura real de expedientes en OneDrive.
             </p>
             {!supportsNumeroFormulario && (
@@ -2039,7 +2039,7 @@ export default function DashboardContratosActivos() {
                                     tooltip="Tasa anual registrada para el calculo financiero."
                                   />
                                   <InfoLine label="Cantidad lotes" value={cantidadLotes} />
-                                  <InfoLine label="Inicio mantenimiento" value={anioMantenimiento} />
+                                  <InfoLine label="Primer cobro mantenimiento" value={anioMantenimiento} />
                                   <InfoLine
                                     label="Vendedor"
                                     value={displayValue(item.vendedor?.nombre_completo, "No asignado")}
@@ -2130,7 +2130,7 @@ export default function DashboardContratosActivos() {
                                   }
                                 />
                                 <DetailRow
-                                  label="Inicio mantenimiento"
+                                  label="Primer cobro mantenimiento"
                                   value={anioMantenimiento}
                                 />
                                 <div className="rounded-md border border-border/60 bg-accent/10 px-3 py-2 md:col-span-2 xl:col-span-2">

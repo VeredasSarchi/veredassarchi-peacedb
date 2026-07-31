@@ -738,11 +738,11 @@ export default function JardinDetalle() {
   }
 
   return (
-    <div className="min-h-screen bg-background p-4 md:p-8">
-      <div className="mx-auto w-full px-2 sm:px-4 lg:px-8">
-        <div className="mb-6 flex items-center justify-between gap-3">
-          <div>
-            <h1 className="text-3xl font-bold text-foreground mb-2">
+    <div className="app-page">
+      <div className="app-page-content">
+        <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0">
+            <h1 className="mb-2 text-2xl font-bold text-foreground sm:text-3xl">
               {garden?.nombre || "Jardin"}
             </h1>
             <p className="text-muted-foreground">

@@ -1550,9 +1550,9 @@ export default function ControlCuotas() {
   }, [arrangementForm, refreshSelected, role, selectedRow, user]);
 
   return (
-    <div className="min-h-screen bg-background p-4 md:p-8">
-      <div className="mx-auto w-full space-y-6 px-2 sm:px-4 lg:px-8">
-        <div className="flex flex-col gap-4 rounded-2xl border border-border/70 bg-surface p-6 shadow-sm lg:flex-row lg:items-end lg:justify-between">
+    <div className="app-page">
+      <div className="app-page-content space-y-6">
+        <div className="flex flex-col gap-4 rounded-2xl border border-border/70 bg-surface p-4 shadow-sm sm:p-6 lg:flex-row lg:items-end lg:justify-between">
           <div className="space-y-2">
             <Button
               variant="ghost"
@@ -1563,7 +1563,7 @@ export default function ControlCuotas() {
               Volver al menu
             </Button>
             <div>
-              <h1 className="text-3xl font-bold text-primary">
+              <h1 className="text-2xl font-bold text-primary sm:text-3xl">
                 Control de cuotas
               </h1>
               <p className="text-sm text-muted-foreground">
@@ -1632,7 +1632,7 @@ export default function ControlCuotas() {
           </CardHeader>
           <CardContent>
             <Tabs defaultValue="por-vencer" className="w-full">
-              <TabsList className="grid w-full grid-cols-2">
+              <TabsList className="grid h-auto w-full grid-cols-2">
                 <TabsTrigger value="por-vencer">
                   Por vencer ({cobranzaAlerts.porVencer.length})
                 </TabsTrigger>
@@ -2136,7 +2136,7 @@ export default function ControlCuotas() {
                         }
                         className="w-full"
                       >
-                        <TabsList className="grid w-full grid-cols-4">
+                        <TabsList className="grid h-auto w-full grid-cols-2 gap-1 sm:grid-cols-4">
                           <TabsTrigger value="cuotas">Cuotas</TabsTrigger>
                           <TabsTrigger value="pagos">Pagos</TabsTrigger>
                           <TabsTrigger value="cargos">Cargos</TabsTrigger>

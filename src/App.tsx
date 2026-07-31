@@ -22,16 +22,17 @@ import OneDriveAdmin from "@/pages/OneDriveAdmin";
 import OneDriveCallback from "@/pages/OneDriveCallback";
 import NotFound from "@/pages/NotFound";
 import Navigation from "@/components/Navigation";
+import AppFooter from "@/components/AppFooter";
 
 function AppLayout() {
   const { user } = useAuth();
 
   return (
-    <div className="min-h-screen w-full bg-background">
+    <div className="flex min-h-dvh w-full min-w-0 flex-col overflow-x-clip bg-background">
       <Toaster richColors closeButton />
       {user && <Navigation />}
 
-      <main className="w-full min-h-screen px-4 sm:px-6 lg:px-8 py-6">
+      <main id="main-content" className="flex w-full min-w-0 flex-1 flex-col">
         <Routes>
           {/* Login: si ya está logueado, lo mandamos al home */}
           <Route
@@ -185,6 +186,8 @@ function AppLayout() {
           <Route path="*" element={<NotFound />} />
         </Routes>
       </main>
+
+      {user && <AppFooter />}
     </div>
   );
 }
