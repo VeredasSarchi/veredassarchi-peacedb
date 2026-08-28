@@ -109,6 +109,31 @@ type BeneficiarioRow = Tables<"contrato_beneficiarios">;
 type EditLogRow = Tables<"contrato_edicion_log">;
 type JardinMini = Pick<Tables<"jardin">, "id_jardin" | "nombre">;
 
+type ResumenFinancieroActual = {
+  saldoCapital: number | null;
+  cuotasRestantes: number | null;
+  plazoMeses: number | null;
+  tipoPlan: string | null;
+  ultimoExtraordinario: {
+    fechaPago: string;
+    monto: number;
+  } | null;
+};
+
+type ResumenCuotasActualRow = {
+  id_contrato: number | null;
+  saldo_capital_pendiente: number | null;
+  cuotas_totales: number | null;
+  cuotas_pagadas: number | null;
+  plazo_meses: number | null;
+  tipo_plan: string | null;
+};
+
+type PagoExtraordinarioRow = Pick<
+  Tables<"contrato_pago">,
+  "id_contrato" | "fecha_pago" | "monto_total"
+>;
+
 type ProductoDetalle = Tables<"contrato_producto"> & {
   lote:
     | (Pick<Tables<"lote">, "id_lote" | "numero_lote" | "id_jardin"> & {
@@ -128,6 +153,7 @@ type ContratoDetalle = {
   contrato: ContratoRow;
   cliente: ClienteRow | null;
   vendedor: VendedorRow | null;
+  resumenFinanciero: ResumenFinancieroActual;
   productos: ProductoDetalle[];
   autorizados: AutorizadoRow[];
   beneficiarios: BeneficiarioRow[];
@@ -985,6 +1011,13 @@ export default function DashboardContratosActivos() {
         } as ContratoRow,
         cliente: asSingle(row.cliente),
         vendedor: asSingle(row.vendedor),
+        resumenFinanciero: {
+          saldoCapital: row.saldo_pendiente ?? null,
+          cuotasRestantes: row.total_meses ?? null,
+          plazoMeses: row.total_meses ?? null,
+          tipoPlan: null,
+          ultimoExtraordinario: null,
+        },
         productos: [],
         autorizados: [],
         beneficiarios: [],
@@ -998,7 +1031,14 @@ export default function DashboardContratosActivos() {
         return;
       }
 
-      const [productosRes, autorizadosRes, beneficiariosRes, editLogsRes] = await Promise.all([
+      const [
+        productosRes,
+        autorizadosRes,
+        beneficiariosRes,
+        editLogsRes,
+        resumenFinancieroRes,
+        pagosExtraordinariosRes,
+      ] = await Promise.all([
         supabase
           .from("contrato_producto")
           .select(`
@@ -1047,6 +1087,19 @@ export default function DashboardContratosActivos() {
           .select("*")
           .in("id_contrato", contractIds)
           .order("fecha", { ascending: false }),
+        supabase
+          .from("vw_control_cuotas_resumen")
+          .select(
+            "id_contrato,saldo_capital_pendiente,cuotas_totales,cuotas_pagadas,plazo_meses,tipo_plan",
+          )
+          .in("id_contrato", contractIds),
+        supabase
+          .from("contrato_pago")
+          .select("id_contrato,fecha_pago,monto_total")
+          .in("id_contrato", contractIds)
+          .eq("tipo_pago", "EXTRAORDINARIO")
+          .eq("estado", "APLICADO")
+          .order("fecha_pago", { ascending: false }),
       ]);
 
       if (productosRes.error) throw productosRes.error;
@@ -1055,6 +1108,32 @@ export default function DashboardContratosActivos() {
       if (editLogsRes.error && !isMissingEditHistoryTable(editLogsRes.error)) {
         throw editLogsRes.error;
       }
+      if (resumenFinancieroRes.error) {
+        console.warn(
+          "No se pudo cargar el resumen financiero vigente; se usaran los datos del contrato:",
+          resumenFinancieroRes.error,
+        );
+      }
+      if (pagosExtraordinariosRes.error) {
+        console.warn(
+          "No se pudo cargar el ultimo pago extraordinario:",
+          pagosExtraordinariosRes.error,
+        );
+      }
+
+      const resumenFinancieroByContrato = new Map<number, ResumenCuotasActualRow>();
+      ((resumenFinancieroRes.data ?? []) as ResumenCuotasActualRow[]).forEach((resumen) => {
+        if (resumen.id_contrato !== null) {
+          resumenFinancieroByContrato.set(resumen.id_contrato, resumen);
+        }
+      });
+
+      const ultimoExtraordinarioByContrato = new Map<number, PagoExtraordinarioRow>();
+      ((pagosExtraordinariosRes.data ?? []) as PagoExtraordinarioRow[]).forEach((pago) => {
+        if (!ultimoExtraordinarioByContrato.has(pago.id_contrato)) {
+          ultimoExtraordinarioByContrato.set(pago.id_contrato, pago);
+        }
+      });
 
       const productoRows = ((productosRes.data ?? []) as unknown) as ProductoDetalleRawRow[];
       const productosByContrato = new Map<number, ProductoDetalle[]>();
@@ -1113,8 +1192,29 @@ export default function DashboardContratosActivos() {
 
       const detallados = contratosBase.map((item) => {
         const idContrato = item.contrato.id_contrato;
+        const resumen = resumenFinancieroByContrato.get(idContrato);
+        const ultimoExtraordinario = ultimoExtraordinarioByContrato.get(idContrato);
+        const cuotasTotales = resumen?.cuotas_totales;
+        const cuotasPagadas = resumen?.cuotas_pagadas;
+        const cuotasRestantes =
+          cuotasTotales !== null && cuotasTotales !== undefined
+            ? Math.max(cuotasTotales - (cuotasPagadas ?? 0), 0)
+            : item.resumenFinanciero.cuotasRestantes;
         return {
           ...item,
+          resumenFinanciero: {
+            saldoCapital:
+              resumen?.saldo_capital_pendiente ?? item.resumenFinanciero.saldoCapital,
+            cuotasRestantes,
+            plazoMeses: resumen?.plazo_meses ?? item.resumenFinanciero.plazoMeses,
+            tipoPlan: resumen?.tipo_plan ?? null,
+            ultimoExtraordinario: ultimoExtraordinario
+              ? {
+                  fechaPago: ultimoExtraordinario.fecha_pago,
+                  monto: ultimoExtraordinario.monto_total,
+                }
+              : null,
+          },
           productos: productosByContrato.get(idContrato) ?? [],
           autorizados: autorizadosByContrato.get(idContrato) ?? [],
           beneficiarios: beneficiariosByContrato.get(idContrato) ?? [],
@@ -1902,10 +2002,14 @@ export default function DashboardContratosActivos() {
                       const contractFiles = driveState.items.filter((driveItem) => !driveItem.isFolder);
                       const contractTitle = formatContractDisplayLabel(item.contrato);
                       const plazoContrato =
-                        item.contrato.total_meses !== null && item.contrato.total_meses !== undefined
-                          ? `${item.contrato.total_meses} meses`
-                          : item.contrato.plazo_anios !== null && item.contrato.plazo_anios !== undefined
-                            ? `${item.contrato.plazo_anios * 12} meses`
+                        item.resumenFinanciero.cuotasRestantes !== null
+                          ? `${item.resumenFinanciero.cuotasRestantes} ${
+                              item.resumenFinanciero.cuotasRestantes === 1
+                                ? "cuota restante"
+                                : "cuotas restantes"
+                            }`
+                          : item.resumenFinanciero.plazoMeses !== null
+                            ? `${item.resumenFinanciero.plazoMeses} meses restantes`
                             : "No definido";
                       const diaPago =
                         item.contrato.dia_pago_mensual !== null && item.contrato.dia_pago_mensual !== undefined
@@ -1939,6 +2043,11 @@ export default function DashboardContratosActivos() {
                                   <div className="mb-2 flex flex-wrap items-center gap-2">
                                     <ContractStatusBadge estado={item.contrato.estado_contrato} />
                                     <DriveStatusBadge driveState={driveState} />
+                                    {item.resumenFinanciero.tipoPlan === "EXTRAORDINARIO" && (
+                                      <Badge className="rounded-full bg-primary-soft text-primary hover:bg-primary-soft">
+                                        Plazo recalculado por extraordinario
+                                      </Badge>
+                                    )}
                                   </div>
                                   <h2 className="break-words text-2xl font-bold text-text-primary">{contractTitle}</h2>
                                   <p className="mt-1 line-clamp-2 text-sm text-text-secondary">
@@ -2031,7 +2140,11 @@ export default function DashboardContratosActivos() {
                               >
                                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                                   <InfoLine icon={Calendar} label="Fecha de firma" value={formatDate(item.contrato.fecha_firma)} />
-                                  <InfoLine label="Plazo" value={plazoContrato} />
+                                  <InfoLine
+                                    label="Plazo actual"
+                                    value={plazoContrato}
+                                    tooltip="Cantidad pendiente del plan vigente. Un pago extraordinario reduce este plazo sin cambiar la cuota mensual."
+                                  />
                                   <InfoLine label="Dia de pago" value={diaPago} />
                                   <InfoLine
                                     label="Tasa interes"
@@ -2062,7 +2175,7 @@ export default function DashboardContratosActivos() {
                             <SectionPanel
                               icon={DollarSign}
                               title="Informacion financiera"
-                              description="Montos complementarios usados para seguimiento administrativo."
+                              description="Saldo y plazo vigentes, actualizados por pagos de cuota y pagos extraordinarios."
                             >
                               <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
                                 <DetailRow
@@ -2081,8 +2194,8 @@ export default function DashboardContratosActivos() {
                                   highlight
                                 />
                                 <DetailRow
-                                  label="Saldo pendiente"
-                                  value={formatCurrency(item.contrato.saldo_pendiente)}
+                                  label="Saldo de capital actual"
+                                  value={formatCurrency(item.resumenFinanciero.saldoCapital)}
                                   highlight
                                 />
                                 <DetailRow
@@ -2096,15 +2209,20 @@ export default function DashboardContratosActivos() {
                                   highlight
                                 />
                                 <DetailRow
-                                  label="Plazo"
-                                  value={
-                                    item.contrato.total_meses !== null && item.contrato.total_meses !== undefined
-                                      ? `${item.contrato.total_meses} meses`
-                                      : item.contrato.plazo_anios !== null && item.contrato.plazo_anios !== undefined
-                                        ? `${item.contrato.plazo_anios * 12} meses`
-                                        : "No definido"
-                                  }
+                                  label="Cuotas restantes"
+                                  value={plazoContrato}
                                 />
+                                {item.resumenFinanciero.ultimoExtraordinario && (
+                                  <DetailRow
+                                    label="Ultimo pago extraordinario"
+                                    value={`${formatCurrency(
+                                      item.resumenFinanciero.ultimoExtraordinario.monto,
+                                    )} - ${formatDate(
+                                      item.resumenFinanciero.ultimoExtraordinario.fechaPago,
+                                    )}`}
+                                    highlight
+                                  />
+                                )}
                                 <DetailRow
                                   label="Día de pago"
                                   value={

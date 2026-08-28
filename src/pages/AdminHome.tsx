@@ -19,6 +19,7 @@ import {
   Flame,
   Trees,
   Link,
+  Users,
 } from "lucide-react";
 
 const AdminHome = () => {
@@ -123,6 +124,14 @@ const AdminHome = () => {
               description: "Gestion de espacios, disponibilidad y ubicaciones.",
               icon: Trees,
               action: () => navigate("/jardines"),
+              actionLabel: "Acceder",
+              disabled: false,
+            },
+            {
+              title: "Usuarios",
+              description: "Crea y administra las cuentas de administradores y vendedores.",
+              icon: Users,
+              action: () => navigate("/usuarios"),
               actionLabel: "Acceder",
               disabled: false,
             },

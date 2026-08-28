@@ -20,12 +20,13 @@ import Jardines from "@/pages/Jardines";
 import JardinDetalle from "@/pages/JardinDetalle";
 import OneDriveAdmin from "@/pages/OneDriveAdmin";
 import OneDriveCallback from "@/pages/OneDriveCallback";
+import Usuarios from "@/pages/Usuarios";
 import NotFound from "@/pages/NotFound";
 import Navigation from "@/components/Navigation";
 import AppFooter from "@/components/AppFooter";
 
 function AppLayout() {
-  const { user } = useAuth();
+  const { user, role } = useAuth();
 
   return (
     <div className="flex min-h-dvh w-full min-w-0 flex-col overflow-x-clip bg-background">
@@ -37,7 +38,13 @@ function AppLayout() {
           {/* Login: si ya está logueado, lo mandamos al home */}
           <Route
             path="/login"
-            element={user ? <Navigate to="/" replace /> : <Login />}
+            element={
+              user ? (
+                <Navigate to={role === "vendedor" ? "/vendedor" : "/"} replace />
+              ) : (
+                <Login />
+              )
+            }
           />
 
           {/* Home admin */}
@@ -169,6 +176,15 @@ function AppLayout() {
             element={
               <ProtectedRoute allowedRoles={["admin"]}>
                 <OneDriveAdmin />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/usuarios"
+            element={
+              <ProtectedRoute allowedRoles={["admin"]}>
+                <Usuarios />
               </ProtectedRoute>
             }
           />

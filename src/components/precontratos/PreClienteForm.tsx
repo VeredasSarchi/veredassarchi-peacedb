@@ -33,6 +33,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { supabase } from "@/integrations/supabase/client";
 import type { Tables, TablesInsert } from "@/integrations/supabase/types";
 import { calculateMaintenanceVat, MAINTENANCE_VAT_RATE } from "@/lib/maintenance-vat";
+import { PAYMENT_METHOD_OPTIONS } from "@/lib/payment-methods";
 import { toast } from "sonner";
 
 const preClienteSchema = z.object({
@@ -1933,10 +1934,11 @@ export function PreClienteForm({
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
-                      <SelectItem value="Efectivo">Efectivo</SelectItem>
-                      <SelectItem value="Transferencia">Transferencia</SelectItem>
-                      <SelectItem value="Tarjeta">Tarjeta</SelectItem>
-                      <SelectItem value="Cheque">Cheque</SelectItem>
+                      {PAYMENT_METHOD_OPTIONS.map((method) => (
+                        <SelectItem key={method.value} value={method.value}>
+                          {method.label}
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                   <FormMessage />

@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { toast } from "sonner";
+import { getUserAppRole } from "@/auth/roles";
 
 export default function Login() {
   const navigate = useNavigate();
@@ -36,10 +37,7 @@ export default function Login() {
 
     toast.success("Sesion iniciada correctamente");
 
-    const userRole =
-      (data.user?.app_metadata as any)?.role ??
-      (data.user?.user_metadata as any)?.role ??
-      null;
+    const userRole = getUserAppRole(data.user);
 
     console.log("ROL DETECTADO:", userRole);
 

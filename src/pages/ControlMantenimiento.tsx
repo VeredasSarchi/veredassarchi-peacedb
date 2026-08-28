@@ -1,12 +1,14 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import {
   AlertCircle,
   ArrowLeft,
   Calendar,
+  CreditCard,
   DollarSign,
   FileSpreadsheet,
+  Info,
   Loader2,
   RefreshCw,
   Search,
@@ -38,6 +40,13 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
@@ -49,6 +58,7 @@ import {
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
+import { PAYMENT_METHOD_OPTIONS } from "@/lib/payment-methods";
 import { cn } from "@/lib/utils";
 
 type ControlMantenimientoResumenRow = {
@@ -70,6 +80,14 @@ type ControlMantenimientoResumenRow = {
   total_pendiente: number | null;
   proxima_fecha_vencimiento: string | null;
   ultimo_periodo_cubierto_hasta: string | null;
+  mora_pendiente: number | null;
+  mora_generada: number | null;
+  mora_pagada: number | null;
+  ultima_fecha_calculo_mora: string | null;
+  ultima_base_moratoria: number | null;
+  ultimo_interes_moratorio_generado: number | null;
+  proxima_fecha_calculo_mora: string | null;
+  total_pendiente_con_mora: number | null;
 };
 
 type ControlMantenimientoCuotaRow = {
@@ -103,14 +121,51 @@ type MantenimientoPagoRow = {
   estado: string;
   registrado_por: string | null;
   created_at: string;
+  tipo_pago: "CUOTA" | "MORA";
+  idempotency_key: string | null;
 };
 
 type MantenimientoPagoAplicacionRow = {
   id_aplicacion_mantenimiento: number;
   id_pago_mantenimiento: number;
-  id_cuota_mantenimiento: number;
+  id_cuota_mantenimiento: number | null;
+  id_cargo_mantenimiento: number | null;
   monto_aplicado: number;
   notas: string | null;
+};
+
+type MantenimientoCargoRow = {
+  id_cargo_mantenimiento: number;
+  id_contrato: number;
+  id_cuota_mantenimiento: number;
+  tipo_cargo: string;
+  descripcion: string;
+  fecha_corte: string;
+  fecha_vencimiento: string;
+  monto_original: number;
+  monto_pagado: number;
+  estado: string;
+  notas: string | null;
+  created_at: string;
+};
+
+type MantenimientoMoraCalculoRow = {
+  id_calculo_mora_mantenimiento: number;
+  id_contrato: number;
+  id_cuota_mantenimiento: number;
+  id_cargo_mantenimiento: number | null;
+  periodo_mora: string;
+  fecha_corte: string;
+  base_principal_pendiente: number;
+  tasa_mensual: number;
+  monto_generado: number;
+  estado: string;
+  detalle_principal: unknown;
+  usuario_creacion: string | null;
+  anulado_at: string | null;
+  anulado_por: string | null;
+  motivo_anulacion: string | null;
+  created_at: string;
 };
 
 type PaymentFormState = {
@@ -119,10 +174,12 @@ type PaymentFormState = {
   metodoPago: string;
   referencia: string;
   observacion: string;
+  idempotencyKey: string;
 };
 
 type MaintenanceAlertCategory = "1m" | "2m" | "3m";
-type MaintenanceDetailTab = "cuotas" | "pagos";
+type MaintenanceDetailTab = "cuotas" | "pagos" | "mora";
+type MaintenancePaymentKind = "CUOTA" | "MORA";
 
 type MaintenanceAlert = {
   idContrato: number;
@@ -139,6 +196,14 @@ function formatCurrency(value: number | null | undefined): string {
   return new Intl.NumberFormat("es-CR", {
     style: "currency",
     currency: "CRC",
+    maximumFractionDigits: 2,
+  }).format(value ?? 0);
+}
+
+function formatFractionAsPercent(value: number | null | undefined): string {
+  return new Intl.NumberFormat("es-CR", {
+    style: "percent",
+    minimumFractionDigits: 0,
     maximumFractionDigits: 2,
   }).format(value ?? 0);
 }
@@ -240,6 +305,13 @@ function getStatusBadgeClass(status: string): string {
   return "bg-primary/10 text-primary hover:bg-primary/10";
 }
 
+function createPaymentIdempotencyKey(): string {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+    return crypto.randomUUID();
+  }
+  return `mantenimiento-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
 function getInitialPaymentForm(): PaymentFormState {
   return {
     montoTotal: "",
@@ -247,7 +319,25 @@ function getInitialPaymentForm(): PaymentFormState {
     metodoPago: "",
     referencia: "",
     observacion: "",
+    idempotencyKey: createPaymentIdempotencyKey(),
   };
+}
+
+async function synchronizeMaintenanceMoratoryInterest(
+  contractId: number,
+  untilDate: string,
+  userName: string,
+): Promise<void> {
+  const { error } = await supabase.rpc(
+    "sincronizar_interes_moratorio_mantenimiento_contrato",
+    {
+      p_id_contrato: contractId,
+      p_fecha_hasta: untilDate,
+      p_usuario: userName,
+    },
+  );
+
+  if (error) throw error;
 }
 
 function EmptyPanel({
@@ -295,18 +385,30 @@ export default function ControlMantenimiento() {
   const [rows, setRows] = useState<ControlMantenimientoResumenRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedContractId, setSelectedContractId] = useState<number | null>(null);
+  const selectedContractIdRef = useRef<number | null>(null);
+  selectedContractIdRef.current = selectedContractId;
   const [detailCuotas, setDetailCuotas] = useState<ControlMantenimientoCuotaRow[]>([]);
   const [detailPagos, setDetailPagos] = useState<MantenimientoPagoRow[]>([]);
   const [detailAplicaciones, setDetailAplicaciones] = useState<
     MantenimientoPagoAplicacionRow[]
   >([]);
+  const [detailCargos, setDetailCargos] = useState<MantenimientoCargoRow[]>([]);
+  const [detailCalculosMora, setDetailCalculosMora] = useState<
+    MantenimientoMoraCalculoRow[]
+  >([]);
+  const [detailContractId, setDetailContractId] = useState<number | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
+  const detailRequestIdRef = useRef(0);
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedAlertTab, setSelectedAlertTab] =
     useState<MaintenanceAlertCategory>("1m");
   const [selectedDetailTab, setSelectedDetailTab] =
     useState<MaintenanceDetailTab>("cuotas");
   const [paymentOpen, setPaymentOpen] = useState(false);
+  const [moratoryInfoOpen, setMoratoryInfoOpen] = useState(false);
+  const [paymentContractId, setPaymentContractId] = useState<number | null>(null);
+  const [paymentKind, setPaymentKind] =
+    useState<MaintenancePaymentKind>("CUOTA");
   const [paymentForm, setPaymentForm] = useState<PaymentFormState>(
     getInitialPaymentForm(),
   );
@@ -373,61 +475,141 @@ export default function ControlMantenimiento() {
     }
   }, [syncMaintenance]);
 
-  const loadDetail = useCallback(async (contractId: number) => {
-    setDetailLoading(true);
-    try {
-      const [cuotasRes, pagosRes] = await Promise.all([
-        supabase
-          .from("vw_control_mantenimiento_cuotas" as never)
-          .select("*")
-          .eq("id_contrato", contractId)
-          .order("numero_periodo", { ascending: true }),
-        supabase
-          .from("contrato_mantenimiento_pago" as never)
-          .select("*")
-          .eq("id_contrato", contractId)
-          .order("fecha_pago", { ascending: false }),
-      ]);
-
-      if (cuotasRes.error) throw cuotasRes.error;
-      if (pagosRes.error) throw pagosRes.error;
-
-      const pagos = (pagosRes.data as MantenimientoPagoRow[] | null) ?? [];
-      const paymentIds = pagos.map((pago) => pago.id_pago_mantenimiento);
-
-      let aplicaciones: MantenimientoPagoAplicacionRow[] = [];
-      if (paymentIds.length > 0) {
-        const aplicacionesRes = await supabase
-          .from("contrato_mantenimiento_pago_aplicacion" as never)
-          .select("*")
-          .in("id_pago_mantenimiento", paymentIds)
-          .order("id_aplicacion_mantenimiento", { ascending: true });
-
-        if (aplicacionesRes.error) throw aplicacionesRes.error;
-        aplicaciones =
-          (aplicacionesRes.data as MantenimientoPagoAplicacionRow[] | null) ?? [];
-      }
-
-      setDetailCuotas(
-        (cuotasRes.data as ControlMantenimientoCuotaRow[] | null) ?? [],
-      );
-      setDetailPagos(pagos);
-      setDetailAplicaciones(aplicaciones);
-    } catch (error) {
-      console.error("Error cargando detalle de mantenimiento", error);
-      toast.error(
-        getErrorMessage(
-          error,
-          "No se pudo cargar el detalle de mantenimiento",
-        ),
-      );
+  const loadDetail = useCallback(
+    async (contractId: number) => {
+      const requestId = ++detailRequestIdRef.current;
+      setDetailContractId(null);
       setDetailCuotas([]);
       setDetailPagos([]);
       setDetailAplicaciones([]);
-    } finally {
-      setDetailLoading(false);
-    }
-  }, []);
+      setDetailCargos([]);
+      setDetailCalculosMora([]);
+      setDetailLoading(true);
+
+      try {
+        try {
+          await synchronizeMaintenanceMoratoryInterest(
+            contractId,
+            getTodayInputValue(),
+            user?.email ?? role ?? "usuario",
+          );
+        } catch (syncError) {
+          console.error(
+            "Error sincronizando mora de mantenimiento",
+            syncError,
+          );
+          if (requestId === detailRequestIdRef.current) {
+            toast.warning(
+              "No se pudo actualizar la mora; se muestran los ultimos datos disponibles.",
+            );
+          }
+        }
+
+        if (requestId !== detailRequestIdRef.current) return;
+
+        const [cuotasRes, pagosRes, cargosRes, calculosMoraRes, resumenRes] =
+          await Promise.all([
+            supabase
+              .from("vw_control_mantenimiento_cuotas" as never)
+              .select("*")
+              .eq("id_contrato", contractId)
+              .order("numero_periodo", { ascending: true }),
+            supabase
+              .from("contrato_mantenimiento_pago" as never)
+              .select("*")
+              .eq("id_contrato", contractId)
+              .order("fecha_pago", { ascending: false }),
+            supabase
+              .from("contrato_mantenimiento_cargo" as never)
+              .select("*")
+              .eq("id_contrato", contractId)
+              .order("fecha_vencimiento", { ascending: true }),
+            supabase
+              .from(
+                "contrato_mantenimiento_interes_moratorio_calculo" as never,
+              )
+              .select("*")
+              .eq("id_contrato", contractId)
+              .order("fecha_corte", { ascending: false }),
+            supabase
+              .from("vw_control_mantenimiento_resumen" as never)
+              .select("*")
+              .eq("id_contrato", contractId)
+              .maybeSingle(),
+          ]);
+
+        if (cuotasRes.error) throw cuotasRes.error;
+        if (pagosRes.error) throw pagosRes.error;
+        if (cargosRes.error) throw cargosRes.error;
+        if (calculosMoraRes.error) throw calculosMoraRes.error;
+        if (resumenRes.error) throw resumenRes.error;
+
+        const pagos = (pagosRes.data as MantenimientoPagoRow[] | null) ?? [];
+        const paymentIds = pagos.map((pago) => pago.id_pago_mantenimiento);
+
+        let aplicaciones: MantenimientoPagoAplicacionRow[] = [];
+        if (paymentIds.length > 0) {
+          const aplicacionesRes = await supabase
+            .from("contrato_mantenimiento_pago_aplicacion" as never)
+            .select("*")
+            .in("id_pago_mantenimiento", paymentIds)
+            .order("id_aplicacion_mantenimiento", { ascending: true });
+
+          if (aplicacionesRes.error) throw aplicacionesRes.error;
+          aplicaciones =
+            (aplicacionesRes.data as MantenimientoPagoAplicacionRow[] | null) ??
+            [];
+        }
+
+        if (requestId !== detailRequestIdRef.current) return;
+
+        setDetailCuotas(
+          (cuotasRes.data as ControlMantenimientoCuotaRow[] | null) ?? [],
+        );
+        setDetailPagos(pagos);
+        setDetailAplicaciones(aplicaciones);
+        setDetailCargos(
+          (cargosRes.data as MantenimientoCargoRow[] | null) ?? [],
+        );
+        setDetailCalculosMora(
+          (calculosMoraRes.data as MantenimientoMoraCalculoRow[] | null) ?? [],
+        );
+        setDetailContractId(contractId);
+
+        const refreshedSummary = resumenRes.data as
+          | ControlMantenimientoResumenRow
+          | null;
+        if (refreshedSummary) {
+          setRows((current) =>
+            current.map((row) =>
+              row.id_contrato === contractId ? refreshedSummary : row,
+            ),
+          );
+        }
+      } catch (error) {
+        console.error("Error cargando detalle de mantenimiento", error);
+        if (requestId === detailRequestIdRef.current) {
+          toast.error(
+            getErrorMessage(
+              error,
+              "No se pudo cargar el detalle de mantenimiento",
+            ),
+          );
+          setDetailCuotas([]);
+          setDetailPagos([]);
+          setDetailAplicaciones([]);
+          setDetailCargos([]);
+          setDetailCalculosMora([]);
+          setDetailContractId(null);
+        }
+      } finally {
+        if (requestId === detailRequestIdRef.current) {
+          setDetailLoading(false);
+        }
+      }
+    },
+    [role, user?.email],
+  );
 
   useEffect(() => {
     void loadResumen();
@@ -453,8 +635,12 @@ export default function ControlMantenimiento() {
       })
       .sort((a, b) => {
         const overdueDelta =
-          Number((b.cuotas_vencidas ?? 0) > 0) -
-          Number((a.cuotas_vencidas ?? 0) > 0);
+          Number(
+            (b.cuotas_vencidas ?? 0) > 0 || (b.mora_pendiente ?? 0) > 0,
+          ) -
+          Number(
+            (a.cuotas_vencidas ?? 0) > 0 || (a.mora_pendiente ?? 0) > 0,
+          );
         if (overdueDelta !== 0) return overdueDelta;
 
         const aTime =
@@ -469,10 +655,15 @@ export default function ControlMantenimiento() {
 
   useEffect(() => {
     if (filteredRows.length === 0) {
+      detailRequestIdRef.current += 1;
       setSelectedContractId(null);
       setDetailCuotas([]);
       setDetailPagos([]);
       setDetailAplicaciones([]);
+      setDetailCargos([]);
+      setDetailCalculosMora([]);
+      setDetailContractId(null);
+      setDetailLoading(false);
       return;
     }
 
@@ -486,9 +677,24 @@ export default function ControlMantenimiento() {
   }, [filteredRows, selectedContractId]);
 
   useEffect(() => {
-    if (!selectedContractId) return;
+    if (!selectedContractId) {
+      detailRequestIdRef.current += 1;
+      setDetailContractId(null);
+      return;
+    }
     void loadDetail(selectedContractId);
+    return () => {
+      detailRequestIdRef.current += 1;
+    };
   }, [loadDetail, selectedContractId]);
+
+  useEffect(() => {
+    if (paymentOpen && paymentContractId !== selectedContractId) {
+      setPaymentOpen(false);
+      setPaymentContractId(null);
+      setPaymentForm(getInitialPaymentForm());
+    }
+  }, [paymentContractId, paymentOpen, selectedContractId]);
 
   const selectedRow = useMemo(
     () =>
@@ -549,13 +755,27 @@ export default function ControlMantenimiento() {
     return {
       totalContratos: filteredRows.length,
       configurados: filteredRows.filter((row) => row.configuracion_completa).length,
-      conVencidas: filteredRows.filter((row) => (row.cuotas_vencidas ?? 0) > 0).length,
+      conVencidas: filteredRows.filter(
+        (row) =>
+          (row.cuotas_vencidas ?? 0) > 0 || (row.mora_pendiente ?? 0) > 0,
+      ).length,
       montoVencido: filteredRows.reduce(
         (acc, row) => acc + (row.monto_vencido ?? 0),
         0,
       ),
       totalPendiente: filteredRows.reduce(
         (acc, row) => acc + (row.total_pendiente ?? 0),
+        0,
+      ),
+      moraPendiente: filteredRows.reduce(
+        (acc, row) => acc + (row.mora_pendiente ?? 0),
+        0,
+      ),
+      totalPendienteConMora: filteredRows.reduce(
+        (acc, row) =>
+          acc +
+          (row.total_pendiente_con_mora ??
+            (row.total_pendiente ?? 0) + (row.mora_pendiente ?? 0)),
         0,
       ),
     };
@@ -596,6 +816,52 @@ export default function ControlMantenimiento() {
     return map;
   }, [detailCuotas]);
 
+  const cargosById = useMemo(() => {
+    const map = new Map<number, MantenimientoCargoRow>();
+    detailCargos.forEach((cargo) => {
+      map.set(cargo.id_cargo_mantenimiento, cargo);
+    });
+    return map;
+  }, [detailCargos]);
+
+  const calculosByCargoId = useMemo(() => {
+    const map = new Map<number, MantenimientoMoraCalculoRow>();
+    detailCalculosMora.forEach((calculo) => {
+      if (calculo.id_cargo_mantenimiento !== null) {
+        map.set(calculo.id_cargo_mantenimiento, calculo);
+      }
+    });
+    return map;
+  }, [detailCalculosMora]);
+
+  const moratorySummary = useMemo(() => {
+    const generated = detailCargos.reduce(
+      (acc, cargo) =>
+        cargo.estado === "ANULADO" ? acc : acc + (cargo.monto_original ?? 0),
+      0,
+    );
+    const paid = detailCargos.reduce(
+      (acc, cargo) =>
+        cargo.estado === "ANULADO" ? acc : acc + (cargo.monto_pagado ?? 0),
+      0,
+    );
+    const pending = detailCargos.reduce(
+      (acc, cargo) =>
+        cargo.estado === "ANULADO"
+          ? acc
+          : acc +
+            Math.max((cargo.monto_original ?? 0) - (cargo.monto_pagado ?? 0), 0),
+      0,
+    );
+
+    return {
+      generated,
+      paid,
+      pending,
+      nextCalculationDate: selectedRow?.proxima_fecha_calculo_mora ?? null,
+    };
+  }, [detailCargos, selectedRow?.proxima_fecha_calculo_mora]);
+
   const currentMaintenanceCharges = useMemo(
     () =>
       detailCuotas
@@ -635,19 +901,32 @@ export default function ControlMantenimiento() {
     );
   }, [currentMaintenanceCharges]);
 
+  const hasPendingMaintenance = selectedPendingMaintenance.total > 0.009;
+  const hasPendingMora = moratorySummary.pending > 0.009;
+  const detailMatchesSelection =
+    detailContractId !== null && detailContractId === selectedRow?.id_contrato;
+
   const refreshSelected = useCallback(async () => {
+    const contractIdToRefresh = selectedContractId;
     await loadResumen();
-    if (selectedContractId) {
-      await loadDetail(selectedContractId);
+    if (
+      contractIdToRefresh !== null &&
+      selectedContractIdRef.current === contractIdToRefresh
+    ) {
+      await loadDetail(contractIdToRefresh);
     }
   }, [loadDetail, loadResumen, selectedContractId]);
 
   const exportSelectedMaintenanceDetail = useCallback(async () => {
-    if (!selectedRow) return;
+    if (!selectedRow || !detailMatchesSelection) return;
 
-    const rowsToExport =
-      selectedDetailTab === "cuotas" ? currentMaintenanceCharges : detailPagos;
-    if (rowsToExport.length === 0) {
+    const activeRowCount =
+      selectedDetailTab === "cuotas"
+        ? currentMaintenanceCharges.length
+        : selectedDetailTab === "pagos"
+          ? detailPagos.length
+          : detailCalculosMora.length;
+    if (activeRowCount === 0) {
       toast.error("No hay datos para exportar en esta pestaña");
       return;
     }
@@ -746,27 +1025,63 @@ export default function ControlMantenimiento() {
           columns,
           rows: currentMaintenanceCharges,
         } satisfies ReportPayload<ControlMantenimientoCuotaRow>);
-      } else {
+      } else if (selectedDetailTab === "pagos") {
         type PaymentExportRow = MantenimientoPagoRow & {
           displayNumber: number;
           aplicacionesTexto: string;
+          principalAplicado: number;
+          moraAplicada: number;
         };
 
         const paymentRows: PaymentExportRow[] = detailPagos.map((pago) => {
           const aplicaciones =
             paymentApplicationsById.get(pago.id_pago_mantenimiento) ?? [];
+          const principalAplicado = aplicaciones.reduce(
+            (total, application) =>
+              application.id_cuota_mantenimiento !== null
+                ? total + application.monto_aplicado
+                : total,
+            0,
+          );
+          const moraAplicada = aplicaciones.reduce(
+            (total, application) =>
+              application.id_cargo_mantenimiento !== null
+                ? total + application.monto_aplicado
+                : total,
+            0,
+          );
           return {
             ...pago,
+            principalAplicado,
+            moraAplicada,
             displayNumber:
               paymentDisplayNumberById.get(pago.id_pago_mantenimiento) ??
               pago.id_pago_mantenimiento,
             aplicacionesTexto:
               aplicaciones
                 .map((application) => {
-                  const cuota = cuotasById.get(application.id_cuota_mantenimiento);
-                  return `Periodo ${cuota?.numero_periodo ?? "-"}: ${formatCurrency(
-                    application.monto_aplicado,
-                  )}`;
+                  if (application.id_cuota_mantenimiento !== null) {
+                    const cuota = cuotasById.get(
+                      application.id_cuota_mantenimiento,
+                    );
+                    return `Periodo ${cuota?.numero_periodo ?? "-"}: ${formatCurrency(
+                      application.monto_aplicado,
+                    )}`;
+                  }
+
+                  if (application.id_cargo_mantenimiento !== null) {
+                    const cargo = cargosById.get(
+                      application.id_cargo_mantenimiento,
+                    );
+                    const calculo = calculosByCargoId.get(
+                      application.id_cargo_mantenimiento,
+                    );
+                    return `Mora ${formatDate(
+                      calculo?.periodo_mora ?? cargo?.fecha_vencimiento,
+                    )}: ${formatCurrency(application.monto_aplicado)}`;
+                  }
+
+                  return `Aplicacion: ${formatCurrency(application.monto_aplicado)}`;
                 })
                 .join(" | ") || "Sin detalle de aplicaciones",
           };
@@ -777,6 +1092,13 @@ export default function ControlMantenimiento() {
             id: "pago",
             header: "Pago",
             getValue: (row) => `Pago #${row.displayNumber}`,
+            type: "text",
+          },
+          {
+            id: "tipo",
+            header: "Tipo",
+            getValue: (row) =>
+              row.tipo_pago === "MORA" ? "Pago de mora" : "Mantenimiento",
             type: "text",
           },
           {
@@ -797,6 +1119,24 @@ export default function ControlMantenimiento() {
             header: "Metodo",
             getValue: (row) => row.metodo_pago || "",
             type: "text",
+          },
+          {
+            id: "principal_aplicado",
+            header: "Principal aplicado",
+            getValue: (row) => row.principalAplicado,
+            formatValue: (value) => formatCurrency(Number(value ?? 0)),
+            type: "currency",
+            align: "right",
+            total: "sum",
+          },
+          {
+            id: "mora_aplicada",
+            header: "Mora aplicada",
+            getValue: (row) => row.moraAplicada,
+            formatValue: (value) => formatCurrency(Number(value ?? 0)),
+            type: "currency",
+            align: "right",
+            total: "sum",
           },
           {
             id: "monto_total",
@@ -838,6 +1178,111 @@ export default function ControlMantenimiento() {
           columns,
           rows: paymentRows,
         } satisfies ReportPayload<PaymentExportRow>);
+      } else {
+        type MoraExportRow = MantenimientoMoraCalculoRow & {
+          montoPagado: number;
+          montoPendiente: number;
+          estadoVisible: string;
+        };
+
+        const moraRows: MoraExportRow[] = detailCalculosMora.map((calculo) => {
+          const cargo =
+            calculo.id_cargo_mantenimiento !== null
+              ? cargosById.get(calculo.id_cargo_mantenimiento)
+              : undefined;
+          const isAnnulled =
+            calculo.estado === "ANULADO" || cargo?.estado === "ANULADO";
+          const montoPagado = cargo?.monto_pagado ?? 0;
+          return {
+            ...calculo,
+            montoPagado,
+            montoPendiente: isAnnulled
+              ? 0
+              : Math.max((cargo?.monto_original ?? calculo.monto_generado) - montoPagado, 0),
+            estadoVisible: isAnnulled
+              ? "ANULADO"
+              : cargo?.estado ?? calculo.estado,
+          };
+        });
+
+        const columns: ReportColumn<MoraExportRow>[] = [
+          {
+            id: "periodo",
+            header: "Periodo",
+            getValue: (row) => formatDate(row.periodo_mora),
+            type: "text",
+          },
+          {
+            id: "corte",
+            header: "Fecha de corte",
+            getValue: (row) => parseCalendarDate(row.fecha_corte),
+            formatValue: (_value, row) => formatDate(row.fecha_corte),
+            type: "date",
+          },
+          {
+            id: "base",
+            header: "Principal pendiente usado como base",
+            getValue: (row) => Number(row.base_principal_pendiente ?? 0),
+            formatValue: (value) => formatCurrency(Number(value ?? 0)),
+            type: "currency",
+            align: "right",
+            total: "sum",
+          },
+          {
+            id: "tasa",
+            header: "Tasa mensual",
+            getValue: (row) => Number(row.tasa_mensual ?? 0),
+            formatValue: (value) =>
+              formatFractionAsPercent(Number(value ?? 0)),
+            type: "number",
+            align: "right",
+          },
+          {
+            id: "generado",
+            header: "Mora generada",
+            getValue: (row) => Number(row.monto_generado ?? 0),
+            formatValue: (value) => formatCurrency(Number(value ?? 0)),
+            type: "currency",
+            align: "right",
+            total: "sum",
+          },
+          {
+            id: "pagado",
+            header: "Mora pagada",
+            getValue: (row) => row.montoPagado,
+            formatValue: (value) => formatCurrency(Number(value ?? 0)),
+            type: "currency",
+            align: "right",
+            total: "sum",
+          },
+          {
+            id: "pendiente",
+            header: "Mora pendiente",
+            getValue: (row) => row.montoPendiente,
+            formatValue: (value) => formatCurrency(Number(value ?? 0)),
+            type: "currency",
+            align: "right",
+            total: "sum",
+          },
+          {
+            id: "estado",
+            header: "Estado",
+            getValue: (row) => row.estadoVisible,
+            type: "text",
+          },
+        ];
+
+        await exportExcelReport({
+          systemName: "Veredas Sarchi - Poas",
+          title: `Mora de mantenimiento - ${selectedRow.cliente_nombre || "Cliente"}`,
+          sheetName: "Mora mantenimiento",
+          fileBaseName: "Control_Mantenimiento_Mora",
+          generatedAt: new Date(),
+          generatedBy: user?.email ?? role ?? "No disponible",
+          filters: baseFilters,
+          columns,
+          rows: moraRows,
+        } satisfies ReportPayload<MoraExportRow>);
       }
 
       toast.success("Excel generado correctamente");
@@ -848,8 +1293,12 @@ export default function ControlMantenimiento() {
       setExportingExcel(false);
     }
   }, [
+    calculosByCargoId,
+    cargosById,
     cuotasById,
     currentMaintenanceCharges,
+    detailCalculosMora,
+    detailMatchesSelection,
     detailPagos,
     paymentApplicationsById,
     paymentDisplayNumberById,
@@ -860,8 +1309,36 @@ export default function ControlMantenimiento() {
     user?.email,
   ]);
 
+  const openPaymentDialog = useCallback(
+    (kind: MaintenancePaymentKind) => {
+      if (!selectedRow?.id_contrato || !detailMatchesSelection) return;
+      const amount =
+        kind === "MORA"
+          ? moratorySummary.pending
+          : selectedPendingMaintenance.total;
+      setPaymentKind(kind);
+      setPaymentContractId(selectedRow.id_contrato);
+      setPaymentForm({
+        ...getInitialPaymentForm(),
+        montoTotal: amount > 0 ? String(amount) : "",
+      });
+      setPaymentOpen(true);
+    },
+    [
+      detailMatchesSelection,
+      moratorySummary.pending,
+      selectedPendingMaintenance.total,
+      selectedRow?.id_contrato,
+    ],
+  );
+
+  const paymentContextMatchesSelection =
+    paymentContractId !== null &&
+    paymentContractId === selectedRow?.id_contrato &&
+    detailMatchesSelection;
+
   const handleRegisterPayment = useCallback(async () => {
-    if (!selectedRow?.id_contrato) return;
+    if (!selectedRow?.id_contrato || !paymentContextMatchesSelection) return;
 
     const montoTotal = Number(paymentForm.montoTotal);
     if (!Number.isFinite(montoTotal) || montoTotal <= 0) {
@@ -874,10 +1351,27 @@ export default function ControlMantenimiento() {
       return;
     }
 
+    const saldoAplicable =
+      paymentKind === "MORA"
+        ? moratorySummary.pending
+        : selectedPendingMaintenance.total;
+    if (montoTotal - saldoAplicable > 0.009) {
+      toast.error(
+        paymentKind === "MORA"
+          ? "El pago no puede superar la mora de mantenimiento pendiente"
+          : "El pago no puede superar el principal de mantenimiento pendiente",
+      );
+      return;
+    }
+
     setRegisteringPayment(true);
     try {
+      const rpcName =
+        paymentKind === "MORA"
+          ? "registrar_pago_mora_mantenimiento"
+          : "registrar_pago_mantenimiento";
       const { error } = await supabase.rpc(
-        "registrar_pago_mantenimiento" as never,
+        rpcName,
         {
           p_id_contrato: selectedRow.id_contrato,
           p_monto_total: montoTotal,
@@ -886,29 +1380,50 @@ export default function ControlMantenimiento() {
           p_referencia: paymentForm.referencia || null,
           p_observacion: paymentForm.observacion || null,
           p_usuario: user?.email ?? role ?? "usuario",
-        } as never,
+          p_idempotency_key: paymentForm.idempotencyKey,
+        },
       );
 
       if (error) {
         throw error;
       }
 
-      toast.success("Pago de mantenimiento registrado correctamente");
+      toast.success(
+        paymentKind === "MORA"
+          ? "Pago de mora de mantenimiento registrado correctamente"
+          : "Pago de mantenimiento registrado correctamente",
+      );
       setPaymentOpen(false);
+      setPaymentContractId(null);
       setPaymentForm(getInitialPaymentForm());
       await refreshSelected();
     } catch (error) {
-      console.error("Error registrando pago de mantenimiento", error);
+      console.error(
+        `Error registrando pago de ${paymentKind.toLowerCase()} de mantenimiento`,
+        error,
+      );
       toast.error(
         getErrorMessage(
           error,
-          "No se pudo registrar el pago de mantenimiento",
+          paymentKind === "MORA"
+            ? "No se pudo registrar el pago de mora de mantenimiento"
+            : "No se pudo registrar el pago de mantenimiento",
         ),
       );
     } finally {
       setRegisteringPayment(false);
     }
-  }, [paymentForm, refreshSelected, role, selectedRow, user]);
+  }, [
+    moratorySummary.pending,
+    paymentForm,
+    paymentKind,
+    paymentContextMatchesSelection,
+    refreshSelected,
+    role,
+    selectedPendingMaintenance.total,
+    selectedRow,
+    user?.email,
+  ]);
 
   return (
     <div className="app-page">
@@ -952,7 +1467,7 @@ export default function ControlMantenimiento() {
           </div>
         </div>
 
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           <SummaryMetricCard
             title="Contratos elegibles"
             value={String(dashboardSummary.totalContratos)}
@@ -964,9 +1479,9 @@ export default function ControlMantenimiento() {
             hint="Con monto anual y fecha del primer cobro."
           />
           <SummaryMetricCard
-            title="Con vencidas"
+            title="Con deuda vencida"
             value={String(dashboardSummary.conVencidas)}
-            hint="Cobros anuales actuales con atraso."
+            hint="Con principal vencido o mora pendiente."
           />
           <SummaryMetricCard
             title="Monto vencido"
@@ -974,9 +1489,19 @@ export default function ControlMantenimiento() {
             hint="Pendiente del cobro anual vencido."
           />
           <SummaryMetricCard
-            title="Pendiente total"
+            title="Principal pendiente"
             value={formatCurrency(dashboardSummary.totalPendiente)}
             hint="Una anualidad abierta por contrato."
+          />
+          <SummaryMetricCard
+            title="Mora pendiente"
+            value={formatCurrency(dashboardSummary.moraPendiente)}
+            hint="Interes moratorio de mantenimiento sin pagar."
+          />
+          <SummaryMetricCard
+            title="Total con mora"
+            value={formatCurrency(dashboardSummary.totalPendienteConMora)}
+            hint="Principal de mantenimiento mas mora pendiente."
           />
         </div>
 
@@ -1137,6 +1662,11 @@ export default function ControlMantenimiento() {
                               {(row.cuotas_vencidas ?? 0) === 1 ? "" : "s"}
                             </Badge>
                           )}
+                          {(row.mora_pendiente ?? 0) > 0 && (
+                            <Badge className="bg-rose-100 text-rose-800 hover:bg-rose-100">
+                              Mora {formatCurrency(row.mora_pendiente)}
+                            </Badge>
+                          )}
                         </div>
                       </div>
                       <div className="mt-3 grid grid-cols-2 gap-3 text-sm">
@@ -1154,6 +1684,18 @@ export default function ControlMantenimiento() {
                           </p>
                           <p className="font-medium text-foreground">
                             {formatCurrency(row.monto_mantenimiento_anual)}
+                          </p>
+                        </div>
+                        <div className="col-span-2 border-t border-border/60 pt-2">
+                          <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                            Total pendiente con mora
+                          </p>
+                          <p className="font-medium text-foreground">
+                            {formatCurrency(
+                              row.total_pendiente_con_mora ??
+                                (row.total_pendiente ?? 0) +
+                                  (row.mora_pendiente ?? 0),
+                            )}
                           </p>
                         </div>
                       </div>
@@ -1194,6 +1736,11 @@ export default function ControlMantenimiento() {
                             ? "Configurado"
                             : "Config pendiente"}
                         </Badge>
+                        {(selectedRow.mora_pendiente ?? 0) > 0 && (
+                          <Badge className="bg-rose-100 text-rose-800 hover:bg-rose-100">
+                            Mora pendiente
+                          </Badge>
+                        )}
                       </div>
                       <CardDescription className="text-sm">
                         {formatContractDisplayLabel(selectedRow, {
@@ -1216,29 +1763,40 @@ export default function ControlMantenimiento() {
                         Sincronizar
                       </Button>
                       <Button
-                        onClick={() => {
-                          setPaymentForm({
-                            ...getInitialPaymentForm(),
-                            montoTotal:
-                              selectedPendingMaintenance.total > 0
-                                ? String(selectedPendingMaintenance.total)
-                                : "",
-                          });
-                          setPaymentOpen(true);
-                        }}
+                        variant="outline"
+                        onClick={() => openPaymentDialog("CUOTA")}
                         disabled={
                           detailLoading ||
+                          !detailMatchesSelection ||
                           !selectedRow.configuracion_completa ||
-                          selectedPendingMaintenance.total <= 0
+                          !hasPendingMaintenance
                         }
                       >
                         <DollarSign className="mr-2 h-4 w-4" />
-                        Registrar pago
+                        Pago de mantenimiento
+                      </Button>
+                      <Button
+                        variant="outline"
+                        onClick={() => openPaymentDialog("MORA")}
+                        disabled={
+                          detailLoading ||
+                          !detailMatchesSelection ||
+                          !selectedRow.configuracion_completa ||
+                          !hasPendingMora
+                        }
+                        title={
+                          !hasPendingMora
+                            ? "El contrato no tiene mora de mantenimiento pendiente"
+                            : undefined
+                        }
+                      >
+                        <CreditCard className="mr-2 h-4 w-4" />
+                        Pago de mora
                       </Button>
                     </div>
                   </CardHeader>
                   <CardContent className="space-y-4">
-                    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
                       <div className="rounded-xl border border-border/70 bg-muted/20 p-4">
                         <p className="text-xs uppercase tracking-wide text-muted-foreground">
                           Primer cobro registrado
@@ -1265,12 +1823,58 @@ export default function ControlMantenimiento() {
                       </div>
                       <div className="rounded-xl border border-border/70 bg-muted/20 p-4">
                         <p className="text-xs uppercase tracking-wide text-muted-foreground">
-                          Pendiente total
+                          Principal pendiente
                         </p>
                         <p className="mt-1 text-xl font-semibold text-foreground">
                           {formatCurrency(selectedPendingMaintenance.total)}
                         </p>
                       </div>
+                      <div className="rounded-xl border border-rose-200 bg-rose-50/60 p-4">
+                        <p className="text-xs uppercase tracking-wide text-rose-800">
+                          Mora pendiente
+                        </p>
+                        <p className="mt-1 text-xl font-semibold text-rose-900">
+                          {formatCurrency(moratorySummary.pending)}
+                        </p>
+                        <p className="mt-1 text-xs text-rose-800/80">
+                          Proximo corte: {formatDate(
+                            moratorySummary.nextCalculationDate,
+                          )}
+                        </p>
+                      </div>
+                      <div className="rounded-xl border border-border/70 bg-muted/20 p-4">
+                        <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                          Total pendiente con mora
+                        </p>
+                        <p className="mt-1 text-xl font-semibold text-foreground">
+                          {formatCurrency(
+                            selectedPendingMaintenance.total +
+                              moratorySummary.pending,
+                          )}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="rounded-lg border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900">
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="flex min-w-0 items-center gap-2">
+                          <Info className="h-4 w-4 shrink-0" />
+                          <p className="font-medium">Regla de interés moratorio</p>
+                        </div>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="shrink-0 text-sky-800 hover:bg-sky-100 hover:text-sky-950"
+                          onClick={() => setMoratoryInfoOpen(true)}
+                        >
+                          Ver detalles
+                        </Button>
+                      </div>
+                      <p className="mt-1 text-xs text-sky-800/80">
+                        El cálculo completo y sus ejemplos están disponibles en la
+                        ventana de información.
+                      </p>
                     </div>
 
                     {!selectedRow.configuracion_completa && (
@@ -1302,10 +1906,13 @@ export default function ControlMantenimiento() {
                       disabled={
                         detailLoading ||
                         exportingExcel ||
+                        !detailMatchesSelection ||
                         !selectedRow.configuracion_completa ||
                         (selectedDetailTab === "cuotas"
                           ? currentMaintenanceCharges.length === 0
-                          : detailPagos.length === 0)
+                          : selectedDetailTab === "pagos"
+                            ? detailPagos.length === 0
+                            : detailCalculosMora.length === 0)
                       }
                     >
                       {exportingExcel ? (
@@ -1322,6 +1929,11 @@ export default function ControlMantenimiento() {
                         <Skeleton className="h-10 w-80 rounded-md" />
                         <Skeleton className="h-64 w-full rounded-xl" />
                       </div>
+                    ) : !detailMatchesSelection ? (
+                      <EmptyPanel
+                        title="Detalle no disponible"
+                        description="Actualiza el contrato seleccionado para volver a cargar su informacion financiera."
+                      />
                     ) : !selectedRow.configuracion_completa ? (
                       <EmptyPanel
                         title="Configuracion pendiente"
@@ -1335,9 +1947,10 @@ export default function ControlMantenimiento() {
                         }
                         className="w-full"
                       >
-                        <TabsList className="grid h-auto w-full grid-cols-2">
+                        <TabsList className="grid h-auto w-full grid-cols-3">
                           <TabsTrigger value="cuotas">Proximo cobro</TabsTrigger>
                           <TabsTrigger value="pagos">Pagos</TabsTrigger>
+                          <TabsTrigger value="mora">Mora</TabsTrigger>
                         </TabsList>
 
                         <TabsContent value="cuotas">
@@ -1413,7 +2026,7 @@ export default function ControlMantenimiento() {
                           {detailPagos.length === 0 ? (
                             <EmptyPanel
                               title="Sin pagos registrados"
-                              description="Aqui apareceran los pagos anuales de mantenimiento."
+                              description="Aqui apareceran los pagos de principal y mora de mantenimiento."
                             />
                           ) : (
                             <div className="space-y-4">
@@ -1444,6 +2057,17 @@ export default function ControlMantenimiento() {
                                             )}
                                           >
                                             {pago.estado}
+                                          </Badge>
+                                          <Badge
+                                            className={
+                                              pago.tipo_pago === "MORA"
+                                                ? "bg-rose-100 text-rose-800 hover:bg-rose-100"
+                                                : "bg-sky-100 text-sky-800 hover:bg-sky-100"
+                                            }
+                                          >
+                                            {pago.tipo_pago === "MORA"
+                                              ? "Mora"
+                                              : "Mantenimiento"}
                                           </Badge>
                                         </div>
                                         <p className="mt-1 text-sm text-muted-foreground">
@@ -1485,17 +2109,47 @@ export default function ControlMantenimiento() {
                                       ) : (
                                         <div className="flex flex-wrap gap-2">
                                           {aplicaciones.map((application) => {
-                                            const cuota = cuotasById.get(
-                                              application.id_cuota_mantenimiento,
-                                            );
+                                            const cuota =
+                                              application.id_cuota_mantenimiento !==
+                                              null
+                                                ? cuotasById.get(
+                                                    application.id_cuota_mantenimiento,
+                                                  )
+                                                : undefined;
+                                            const cargo =
+                                              application.id_cargo_mantenimiento !==
+                                              null
+                                                ? cargosById.get(
+                                                    application.id_cargo_mantenimiento,
+                                                  )
+                                                : undefined;
+                                            const calculo =
+                                              application.id_cargo_mantenimiento !==
+                                              null
+                                                ? calculosByCargoId.get(
+                                                    application.id_cargo_mantenimiento,
+                                                  )
+                                                : undefined;
+                                            const isMora = Boolean(cargo || calculo);
                                             return (
                                               <div
                                                 key={
                                                   application.id_aplicacion_mantenimiento
                                                 }
-                                                className="rounded-full border border-primary/20 bg-primary/5 px-3 py-1 text-xs text-primary"
+                                                className={cn(
+                                                  "rounded-full border px-3 py-1 text-xs",
+                                                  isMora
+                                                    ? "border-rose-200 bg-rose-50 text-rose-800"
+                                                    : "border-primary/20 bg-primary/5 text-primary",
+                                                )}
                                               >
-                                                Periodo {cuota?.numero_periodo ?? "-"}:{" "}
+                                                {isMora
+                                                  ? `Mora ${formatDate(
+                                                      calculo?.periodo_mora ??
+                                                        cargo?.fecha_vencimiento,
+                                                    )}`
+                                                  : `Periodo ${cuota?.numero_periodo ?? "-"}`}
+                                                :{" "}
                                                 {formatCurrency(
                                                   application.monto_aplicado,
                                                 )}
@@ -1511,6 +2165,133 @@ export default function ControlMantenimiento() {
                             </div>
                           )}
                         </TabsContent>
+
+                        <TabsContent value="mora">
+                          <div className="mb-4 space-y-4">
+                            <div className="rounded-xl border border-rose-200 bg-rose-50/60 p-4 text-sm text-rose-900">
+                              <p className="font-medium">
+                                Interes moratorio de mantenimiento sin capitalizacion
+                              </p>
+                              <p className="mt-1 text-rose-800/80">
+                                El cliente dispone de todo el mes de vencimiento para
+                                pagar. Cada primer dia de mes posterior se genera un 2 %
+                                solamente sobre el principal que continue pendiente; la
+                                mora acumulada nunca forma parte de la base.
+                              </p>
+                            </div>
+                            <div className="grid gap-3 sm:grid-cols-3">
+                              <div className="rounded-lg border border-border/70 bg-muted/20 p-3">
+                                <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                                  Mora generada
+                                </p>
+                                <p className="mt-1 font-semibold">
+                                  {formatCurrency(moratorySummary.generated)}
+                                </p>
+                              </div>
+                              <div className="rounded-lg border border-border/70 bg-muted/20 p-3">
+                                <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                                  Mora pagada
+                                </p>
+                                <p className="mt-1 font-semibold">
+                                  {formatCurrency(moratorySummary.paid)}
+                                </p>
+                              </div>
+                              <div className="rounded-lg border border-rose-200 bg-rose-50/60 p-3">
+                                <p className="text-xs uppercase tracking-wide text-rose-800">
+                                  Mora pendiente
+                                </p>
+                                <p className="mt-1 font-semibold text-rose-900">
+                                  {formatCurrency(moratorySummary.pending)}
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+
+                          {detailCalculosMora.length === 0 ? (
+                            <EmptyPanel
+                              title="No hay calculos moratorios"
+                              description="El mantenimiento no ha alcanzado un corte mensual con principal pendiente sujeto a mora."
+                            />
+                          ) : (
+                            <div className="overflow-x-auto">
+                              <Table>
+                                <TableHeader>
+                                  <TableRow>
+                                    <TableHead>Periodo</TableHead>
+                                    <TableHead>Corte</TableHead>
+                                    <TableHead>Principal base</TableHead>
+                                    <TableHead>Tasa</TableHead>
+                                    <TableHead>Generado</TableHead>
+                                    <TableHead>Pagado</TableHead>
+                                    <TableHead>Pendiente</TableHead>
+                                    <TableHead>Estado</TableHead>
+                                  </TableRow>
+                                </TableHeader>
+                                <TableBody>
+                                  {detailCalculosMora.map((calculo) => {
+                                    const cargo =
+                                      calculo.id_cargo_mantenimiento !== null
+                                        ? cargosById.get(
+                                            calculo.id_cargo_mantenimiento,
+                                          )
+                                        : undefined;
+                                    const isAnnulled =
+                                      calculo.estado === "ANULADO" ||
+                                      cargo?.estado === "ANULADO";
+                                    const pagado = cargo?.monto_pagado ?? 0;
+                                    const pendiente = isAnnulled
+                                      ? 0
+                                      : Math.max(
+                                          (cargo?.monto_original ??
+                                            calculo.monto_generado) - pagado,
+                                          0,
+                                        );
+                                    const estado = isAnnulled
+                                      ? "ANULADO"
+                                      : cargo?.estado ?? calculo.estado;
+
+                                    return (
+                                      <TableRow
+                                        key={calculo.id_calculo_mora_mantenimiento}
+                                      >
+                                        <TableCell className="font-medium">
+                                          {formatDate(calculo.periodo_mora)}
+                                        </TableCell>
+                                        <TableCell>
+                                          {formatDate(calculo.fecha_corte)}
+                                        </TableCell>
+                                        <TableCell>
+                                          {formatCurrency(
+                                            calculo.base_principal_pendiente,
+                                          )}
+                                        </TableCell>
+                                        <TableCell>
+                                          {formatFractionAsPercent(
+                                            calculo.tasa_mensual,
+                                          )}
+                                        </TableCell>
+                                        <TableCell>
+                                          {formatCurrency(calculo.monto_generado)}
+                                        </TableCell>
+                                        <TableCell>{formatCurrency(pagado)}</TableCell>
+                                        <TableCell>
+                                          {formatCurrency(pendiente)}
+                                        </TableCell>
+                                        <TableCell>
+                                          <Badge
+                                            className={getStatusBadgeClass(estado)}
+                                          >
+                                            {estado}
+                                          </Badge>
+                                        </TableCell>
+                                      </TableRow>
+                                    );
+                                  })}
+                                </TableBody>
+                              </Table>
+                            </div>
+                          )}
+                        </TabsContent>
                       </Tabs>
                     )}
                   </CardContent>
@@ -1521,22 +2302,117 @@ export default function ControlMantenimiento() {
         </div>
       </div>
 
-      <Dialog open={paymentOpen} onOpenChange={setPaymentOpen}>
-        <DialogContent className="sm:max-w-xl">
+      <Dialog open={moratoryInfoOpen} onOpenChange={setMoratoryInfoOpen}>
+        <DialogContent className="sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>Registrar pago de mantenimiento</DialogTitle>
+            <DialogTitle className="flex items-center gap-2">
+              <Info className="h-5 w-5 text-sky-700" />
+              Regla de interés moratorio
+            </DialogTitle>
             <DialogDescription>
-              El pago se aplicará únicamente al cobro anual pendiente. Al
-              completarlo se generará el cobro del siguiente año.
+              La mora de mantenimiento se calcula por mes calendario y se registra
+              separada del principal.
             </DialogDescription>
           </DialogHeader>
+
+          <div className="space-y-3 text-sm text-foreground">
+            <div className="rounded-lg border border-sky-200 bg-sky-50 p-3 text-sky-950">
+              <p className="font-medium">¿Cuándo se genera?</p>
+              <p className="mt-1 text-sky-900/80">
+                El cliente puede pagar durante todo el mes de vencimiento sin recargo.
+                Si el principal continúa pendiente, el primer cargo se genera el día
+                1 del mes siguiente.
+              </p>
+            </div>
+
+            <div className="rounded-lg border border-border/70 bg-muted/20 p-3">
+              <p className="font-medium">¿Sobre qué monto se calcula?</p>
+              <p className="mt-1 text-muted-foreground">
+                Se aplica el 2 % mensual únicamente sobre el principal pendiente de la
+                anualidad. Los intereses moratorios acumulados nunca forman parte de
+                la base y no generan nuevos intereses.
+              </p>
+            </div>
+
+            <div className="rounded-lg border border-border/70 p-3">
+              <p className="font-medium">Ejemplo</p>
+              <ul className="mt-2 list-disc space-y-1 pl-5 text-muted-foreground">
+                <li>Anualidad pendiente: ₡40.000.</li>
+                <li>Primer día del mes siguiente: mora de ₡800 (2 %).</li>
+                <li>Si no paga el mes siguiente, se generan otros ₡800 sobre los ₡40.000.</li>
+                <li>La mora acumulada sería ₡1.600, sin capitalización.</li>
+              </ul>
+            </div>
+          </div>
+
+          <div className="flex justify-end">
+            <Button type="button" onClick={() => setMoratoryInfoOpen(false)}>
+              Entendido
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={paymentOpen}
+        onOpenChange={(open) => {
+          setPaymentOpen(open);
+          if (!open && !registeringPayment) {
+            setPaymentContractId(null);
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-xl">
+          <DialogHeader>
+            <DialogTitle>
+              {paymentKind === "MORA"
+                ? "Registrar pago de mora de mantenimiento"
+                : "Registrar pago de mantenimiento"}
+            </DialogTitle>
+            <DialogDescription>
+              {paymentKind === "MORA"
+                ? "Este ingreso se aplicara exclusivamente a la mora de mantenimiento pendiente."
+                : "Este ingreso se aplicara exclusivamente al principal del cobro anual pendiente."}
+            </DialogDescription>
+          </DialogHeader>
+          <div
+            className={cn(
+              "rounded-lg border px-4 py-3 text-sm",
+              paymentKind === "MORA"
+                ? "border-rose-200 bg-rose-50 text-rose-900"
+                : "border-sky-200 bg-sky-50 text-sky-900",
+            )}
+          >
+            <p className="text-xs uppercase tracking-wide opacity-80">
+              Saldo disponible para este concepto
+            </p>
+            <p className="mt-1 text-lg font-semibold">
+              {formatCurrency(
+                paymentKind === "MORA"
+                  ? moratorySummary.pending
+                  : selectedPendingMaintenance.total,
+              )}
+            </p>
+            <p className="mt-1 text-xs opacity-80">
+              No se trasladara ningun remanente entre principal y mora.
+            </p>
+          </div>
           <div className="grid gap-4 md:grid-cols-2">
             <div className="space-y-2">
-              <Label htmlFor="mantenimiento-pago-monto">Monto total</Label>
+              <Label htmlFor="mantenimiento-pago-monto">
+                {paymentKind === "MORA"
+                  ? "Monto de mora"
+                  : "Monto de mantenimiento"}
+              </Label>
               <Input
                 id="mantenimiento-pago-monto"
                 type="number"
                 min="0"
+                max={
+                  paymentKind === "MORA"
+                    ? moratorySummary.pending
+                    : selectedPendingMaintenance.total
+                }
                 step="0.01"
                 value={paymentForm.montoTotal}
                 onChange={(event) =>
@@ -1565,18 +2441,27 @@ export default function ControlMantenimiento() {
             </div>
             <div className="space-y-2">
               <Label htmlFor="mantenimiento-pago-metodo">Metodo de pago</Label>
-              <Input
-                id="mantenimiento-pago-metodo"
+              <Select
                 value={paymentForm.metodoPago}
-                onChange={(event) =>
+                onValueChange={(value) =>
                   setPaymentForm((current) => ({
                     ...current,
-                    metodoPago: event.target.value,
+                    metodoPago: value,
                   }))
                 }
-                placeholder="Transferencia, efectivo, deposito"
                 disabled={registeringPayment}
-              />
+              >
+                <SelectTrigger id="mantenimiento-pago-metodo">
+                  <SelectValue placeholder="Seleccione un método" />
+                </SelectTrigger>
+                <SelectContent>
+                  {PAYMENT_METHOD_OPTIONS.map((method) => (
+                    <SelectItem key={method.value} value={method.value}>
+                      {method.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="space-y-2">
               <Label htmlFor="mantenimiento-pago-referencia">Referencia</Label>
@@ -1611,19 +2496,30 @@ export default function ControlMantenimiento() {
           <div className="flex justify-end gap-2">
             <Button
               variant="outline"
-              onClick={() => setPaymentOpen(false)}
+              onClick={() => {
+                setPaymentOpen(false);
+                setPaymentContractId(null);
+              }}
               disabled={registeringPayment}
             >
               Cancelar
             </Button>
             <Button
               onClick={() => void handleRegisterPayment()}
-              disabled={registeringPayment}
+              disabled={
+                registeringPayment ||
+                !paymentContextMatchesSelection ||
+                (paymentKind === "MORA"
+                  ? moratorySummary.pending
+                  : selectedPendingMaintenance.total) <= 0.009
+              }
             >
               {registeringPayment && (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               )}
-              Registrar pago
+              {paymentKind === "MORA"
+                ? "Registrar pago de mora"
+                : "Registrar pago de mantenimiento"}
             </Button>
           </div>
         </DialogContent>

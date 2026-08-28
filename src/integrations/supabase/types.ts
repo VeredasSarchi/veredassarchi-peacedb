@@ -726,6 +726,157 @@ export type Database = {
           },
         ]
       }
+      contrato_interes_moratorio_calculo: {
+        Row: {
+          anulado_at: string | null
+          anulado_por: string | null
+          base_cuotas_vencidas: number
+          base_mora_anterior: number
+          base_total: number
+          created_at: string
+          detalle_cuotas: Json
+          dias_gracia: number
+          estado: string
+          fecha_corte: string
+          id_calculo_mora: number
+          id_cargo: number | null
+          id_contrato: number
+          id_plan_pago: number
+          monto_generado: number
+          motivo_anulacion: string | null
+          periodo_mora: string
+          tasa_mensual: number
+          usuario_creacion: string | null
+        }
+        Insert: {
+          anulado_at?: string | null
+          anulado_por?: string | null
+          base_cuotas_vencidas?: number
+          base_mora_anterior?: number
+          base_total?: number
+          created_at?: string
+          detalle_cuotas?: Json
+          dias_gracia: number
+          estado?: string
+          fecha_corte: string
+          id_calculo_mora?: number
+          id_cargo?: number | null
+          id_contrato: number
+          id_plan_pago: number
+          monto_generado?: number
+          motivo_anulacion?: string | null
+          periodo_mora: string
+          tasa_mensual: number
+          usuario_creacion?: string | null
+        }
+        Update: {
+          anulado_at?: string | null
+          anulado_por?: string | null
+          base_cuotas_vencidas?: number
+          base_mora_anterior?: number
+          base_total?: number
+          created_at?: string
+          detalle_cuotas?: Json
+          dias_gracia?: number
+          estado?: string
+          fecha_corte?: string
+          id_calculo_mora?: number
+          id_cargo?: number | null
+          id_contrato?: number
+          id_plan_pago?: number
+          monto_generado?: number
+          motivo_anulacion?: string | null
+          periodo_mora?: string
+          tasa_mensual?: number
+          usuario_creacion?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "contrato_interes_moratorio_calculo_id_cargo_fkey"
+            columns: ["id_cargo"]
+            isOneToOne: true
+            referencedRelation: "contrato_cargo"
+            referencedColumns: ["id_cargo"]
+          },
+          {
+            foreignKeyName: "contrato_interes_moratorio_calculo_id_contrato_fkey"
+            columns: ["id_contrato"]
+            isOneToOne: false
+            referencedRelation: "contrato"
+            referencedColumns: ["id_contrato"]
+          },
+          {
+            foreignKeyName: "contrato_interes_moratorio_calculo_id_plan_pago_fkey"
+            columns: ["id_plan_pago"]
+            isOneToOne: false
+            referencedRelation: "contrato_plan_pago"
+            referencedColumns: ["id_plan_pago"]
+          },
+        ]
+      }
+      contrato_interes_moratorio_configuracion: {
+        Row: {
+          activo: boolean
+          created_at: string
+          dias_gracia: number
+          fecha_efectiva: string
+          id_configuracion: number
+          tasa_mensual: number
+          updated_at: string
+          usuario_actualizacion: string | null
+        }
+        Insert: {
+          activo?: boolean
+          created_at?: string
+          dias_gracia?: number
+          fecha_efectiva: string
+          id_configuracion?: number
+          tasa_mensual?: number
+          updated_at?: string
+          usuario_actualizacion?: string | null
+        }
+        Update: {
+          activo?: boolean
+          created_at?: string
+          dias_gracia?: number
+          fecha_efectiva?: string
+          id_configuracion?: number
+          tasa_mensual?: number
+          updated_at?: string
+          usuario_actualizacion?: string | null
+        }
+        Relationships: []
+      }
+      contrato_mantenimiento_interes_moratorio_configuracion: {
+        Row: {
+          activo: boolean
+          created_at: string
+          fecha_efectiva: string
+          id_configuracion: number
+          tasa_mensual: number
+          updated_at: string
+          usuario_actualizacion: string | null
+        }
+        Insert: {
+          activo?: boolean
+          created_at?: string
+          fecha_efectiva: string
+          id_configuracion?: number
+          tasa_mensual?: number
+          updated_at?: string
+          usuario_actualizacion?: string | null
+        }
+        Update: {
+          activo?: boolean
+          created_at?: string
+          fecha_efectiva?: string
+          id_configuracion?: number
+          tasa_mensual?: number
+          updated_at?: string
+          usuario_actualizacion?: string | null
+        }
+        Relationships: []
+      }
       contrato_mantenimiento_cuota: {
         Row: {
           created_at: string
@@ -807,6 +958,145 @@ export type Database = {
           },
         ]
       }
+      contrato_mantenimiento_cargo: {
+        Row: {
+          created_at: string
+          descripcion: string
+          estado: string
+          fecha_corte: string
+          fecha_vencimiento: string
+          id_cargo_mantenimiento: number
+          id_contrato: number
+          id_cuota_mantenimiento: number
+          monto_original: number
+          monto_pagado: number
+          notas: string | null
+          tipo_cargo: string
+        }
+        Insert: {
+          created_at?: string
+          descripcion: string
+          estado?: string
+          fecha_corte: string
+          fecha_vencimiento: string
+          id_cargo_mantenimiento?: number
+          id_contrato: number
+          id_cuota_mantenimiento: number
+          monto_original: number
+          monto_pagado?: number
+          notas?: string | null
+          tipo_cargo: string
+        }
+        Update: {
+          created_at?: string
+          descripcion?: string
+          estado?: string
+          fecha_corte?: string
+          fecha_vencimiento?: string
+          id_cargo_mantenimiento?: number
+          id_contrato?: number
+          id_cuota_mantenimiento?: number
+          monto_original?: number
+          monto_pagado?: number
+          notas?: string | null
+          tipo_cargo?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "contrato_mantenimiento_cargo_id_contrato_fkey"
+            columns: ["id_contrato"]
+            isOneToOne: false
+            referencedRelation: "contrato"
+            referencedColumns: ["id_contrato"]
+          },
+          {
+            foreignKeyName: "contrato_mantenimiento_cargo_id_cuota_mantenimiento_fkey"
+            columns: ["id_cuota_mantenimiento"]
+            isOneToOne: false
+            referencedRelation: "contrato_mantenimiento_cuota"
+            referencedColumns: ["id_cuota_mantenimiento"]
+          },
+        ]
+      }
+      contrato_mantenimiento_interes_moratorio_calculo: {
+        Row: {
+          anulado_at: string | null
+          anulado_por: string | null
+          base_principal_pendiente: number
+          created_at: string
+          detalle_principal: Json
+          estado: string
+          fecha_corte: string
+          id_calculo_mora_mantenimiento: number
+          id_cargo_mantenimiento: number | null
+          id_contrato: number
+          id_cuota_mantenimiento: number
+          monto_generado: number
+          motivo_anulacion: string | null
+          periodo_mora: string
+          tasa_mensual: number
+          usuario_creacion: string | null
+        }
+        Insert: {
+          anulado_at?: string | null
+          anulado_por?: string | null
+          base_principal_pendiente: number
+          created_at?: string
+          detalle_principal?: Json
+          estado?: string
+          fecha_corte: string
+          id_calculo_mora_mantenimiento?: number
+          id_cargo_mantenimiento?: number | null
+          id_contrato: number
+          id_cuota_mantenimiento: number
+          monto_generado: number
+          motivo_anulacion?: string | null
+          periodo_mora: string
+          tasa_mensual: number
+          usuario_creacion?: string | null
+        }
+        Update: {
+          anulado_at?: string | null
+          anulado_por?: string | null
+          base_principal_pendiente?: number
+          created_at?: string
+          detalle_principal?: Json
+          estado?: string
+          fecha_corte?: string
+          id_calculo_mora_mantenimiento?: number
+          id_cargo_mantenimiento?: number | null
+          id_contrato?: number
+          id_cuota_mantenimiento?: number
+          monto_generado?: number
+          motivo_anulacion?: string | null
+          periodo_mora?: string
+          tasa_mensual?: number
+          usuario_creacion?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "contrato_mantenimiento_interes_moratorio_calculo_id_cargo_fkey"
+            columns: ["id_cargo_mantenimiento"]
+            isOneToOne: true
+            referencedRelation: "contrato_mantenimiento_cargo"
+            referencedColumns: ["id_cargo_mantenimiento"]
+          },
+          {
+            foreignKeyName: "contrato_mantenimiento_interes_moratorio_calculo_id_contrato_fkey"
+            columns: ["id_contrato"]
+            isOneToOne: false
+            referencedRelation: "contrato"
+            referencedColumns: ["id_contrato"]
+          },
+          {
+            foreignKeyName: "contrato_mantenimiento_interes_moratorio_calculo_id_cuota_fkey"
+            columns: ["id_cuota_mantenimiento"]
+            isOneToOne: false
+            referencedRelation: "contrato_mantenimiento_cuota"
+            referencedColumns: ["id_cuota_mantenimiento"]
+          },
+        ]
+      }
       contrato_mantenimiento_pago: {
         Row: {
           created_at: string
@@ -814,11 +1104,13 @@ export type Database = {
           fecha_pago: string
           id_contrato: number
           id_pago_mantenimiento: number
+          idempotency_key: string | null
           metodo_pago: string | null
           monto_total: number
           observacion: string | null
           referencia: string | null
           registrado_por: string | null
+          tipo_pago: string
         }
         Insert: {
           created_at?: string
@@ -826,11 +1118,13 @@ export type Database = {
           fecha_pago: string
           id_contrato: number
           id_pago_mantenimiento?: number
+          idempotency_key?: string | null
           metodo_pago?: string | null
           monto_total: number
           observacion?: string | null
           referencia?: string | null
           registrado_por?: string | null
+          tipo_pago?: string
         }
         Update: {
           created_at?: string
@@ -838,11 +1132,13 @@ export type Database = {
           fecha_pago?: string
           id_contrato?: number
           id_pago_mantenimiento?: number
+          idempotency_key?: string | null
           metodo_pago?: string | null
           monto_total?: number
           observacion?: string | null
           referencia?: string | null
           registrado_por?: string | null
+          tipo_pago?: string
         }
         Relationships: [
           {
@@ -885,26 +1181,36 @@ export type Database = {
       contrato_mantenimiento_pago_aplicacion: {
         Row: {
           id_aplicacion_mantenimiento: number
-          id_cuota_mantenimiento: number
+          id_cargo_mantenimiento: number | null
+          id_cuota_mantenimiento: number | null
           id_pago_mantenimiento: number
           monto_aplicado: number
           notas: string | null
         }
         Insert: {
           id_aplicacion_mantenimiento?: number
-          id_cuota_mantenimiento: number
+          id_cargo_mantenimiento?: number | null
+          id_cuota_mantenimiento?: number | null
           id_pago_mantenimiento: number
           monto_aplicado: number
           notas?: string | null
         }
         Update: {
           id_aplicacion_mantenimiento?: number
-          id_cuota_mantenimiento?: number
+          id_cargo_mantenimiento?: number | null
+          id_cuota_mantenimiento?: number | null
           id_pago_mantenimiento?: number
           monto_aplicado?: number
           notas?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "contrato_mantenimiento_pago_aplicac_id_cargo_mantenimiento_fkey"
+            columns: ["id_cargo_mantenimiento"]
+            isOneToOne: false
+            referencedRelation: "contrato_mantenimiento_cargo"
+            referencedColumns: ["id_cargo_mantenimiento"]
+          },
           {
             foreignKeyName: "contrato_mantenimiento_pago_aplicac_id_cuota_mantenimiento_fkey"
             columns: ["id_cuota_mantenimiento"]
@@ -936,6 +1242,7 @@ export type Database = {
           estado: string
           fecha_pago: string
           id_contrato: number
+          idempotency_key: string | null
           id_pago: number
           metodo_pago: string | null
           monto_total: number
@@ -944,6 +1251,7 @@ export type Database = {
           observacion: string | null
           referencia: string | null
           registrado_por: string | null
+          tipo_pago: string
         }
         Insert: {
           anulado_at?: string | null
@@ -952,6 +1260,7 @@ export type Database = {
           estado?: string
           fecha_pago: string
           id_contrato: number
+          idempotency_key?: string | null
           id_pago?: number
           metodo_pago?: string | null
           monto_total: number
@@ -960,6 +1269,7 @@ export type Database = {
           observacion?: string | null
           referencia?: string | null
           registrado_por?: string | null
+          tipo_pago?: string
         }
         Update: {
           anulado_at?: string | null
@@ -968,6 +1278,7 @@ export type Database = {
           estado?: string
           fecha_pago?: string
           id_contrato?: number
+          idempotency_key?: string | null
           id_pago?: number
           metodo_pago?: string | null
           monto_total?: number
@@ -976,6 +1287,7 @@ export type Database = {
           observacion?: string | null
           referencia?: string | null
           registrado_por?: string | null
+          tipo_pago?: string
         }
         Relationships: [
           {
@@ -1015,12 +1327,114 @@ export type Database = {
           },
         ]
       }
+      contrato_pago_extraordinario: {
+        Row: {
+          ahorro_intereses: number
+          created_at: string
+          cuota_base: number
+          cuotas_restantes_antes: number
+          cuotas_restantes_despues: number
+          fecha_fin_antes: string | null
+          fecha_fin_despues: string | null
+          fecha_pago: string
+          id_contrato: number
+          id_pago: number
+          id_plan_origen: number
+          id_plan_resultante: number
+          interes_futuro_antes: number
+          interes_futuro_despues: number
+          liquidacion_total: boolean
+          monto_extraordinario: number
+          registrado_por: string | null
+          saldo_capital_antes: number
+          saldo_capital_despues: number
+          tasa_interes_anual: number
+          tasa_interes_mensual: number
+        }
+        Insert: {
+          ahorro_intereses: number
+          created_at?: string
+          cuota_base: number
+          cuotas_restantes_antes: number
+          cuotas_restantes_despues: number
+          fecha_fin_antes?: string | null
+          fecha_fin_despues?: string | null
+          fecha_pago: string
+          id_contrato: number
+          id_pago: number
+          id_plan_origen: number
+          id_plan_resultante: number
+          interes_futuro_antes: number
+          interes_futuro_despues: number
+          liquidacion_total?: boolean
+          monto_extraordinario: number
+          registrado_por?: string | null
+          saldo_capital_antes: number
+          saldo_capital_despues: number
+          tasa_interes_anual: number
+          tasa_interes_mensual: number
+        }
+        Update: {
+          ahorro_intereses?: number
+          created_at?: string
+          cuota_base?: number
+          cuotas_restantes_antes?: number
+          cuotas_restantes_despues?: number
+          fecha_fin_antes?: string | null
+          fecha_fin_despues?: string | null
+          fecha_pago?: string
+          id_contrato?: number
+          id_pago?: number
+          id_plan_origen?: number
+          id_plan_resultante?: number
+          interes_futuro_antes?: number
+          interes_futuro_despues?: number
+          liquidacion_total?: boolean
+          monto_extraordinario?: number
+          registrado_por?: string | null
+          saldo_capital_antes?: number
+          saldo_capital_despues?: number
+          tasa_interes_anual?: number
+          tasa_interes_mensual?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "contrato_pago_extraordinario_id_contrato_fkey"
+            columns: ["id_contrato"]
+            isOneToOne: false
+            referencedRelation: "contrato"
+            referencedColumns: ["id_contrato"]
+          },
+          {
+            foreignKeyName: "contrato_pago_extraordinario_id_pago_fkey"
+            columns: ["id_pago"]
+            isOneToOne: true
+            referencedRelation: "contrato_pago"
+            referencedColumns: ["id_pago"]
+          },
+          {
+            foreignKeyName: "contrato_pago_extraordinario_id_plan_origen_fkey"
+            columns: ["id_plan_origen"]
+            isOneToOne: false
+            referencedRelation: "contrato_plan_pago"
+            referencedColumns: ["id_plan_pago"]
+          },
+          {
+            foreignKeyName: "contrato_pago_extraordinario_id_plan_resultante_fkey"
+            columns: ["id_plan_resultante"]
+            isOneToOne: false
+            referencedRelation: "contrato_plan_pago"
+            referencedColumns: ["id_plan_pago"]
+          },
+        ]
+      }
       contrato_pago_aplicacion: {
         Row: {
           id_aplicacion: number
           id_cargo: number | null
           id_cuota: number | null
           id_pago: number
+          id_plan_pago: number | null
           monto_capital: number
           monto_interes: number
           monto_otros: number
@@ -1031,6 +1445,7 @@ export type Database = {
           id_cargo?: number | null
           id_cuota?: number | null
           id_pago: number
+          id_plan_pago?: number | null
           monto_capital?: number
           monto_interes?: number
           monto_otros?: number
@@ -1041,6 +1456,7 @@ export type Database = {
           id_cargo?: number | null
           id_cuota?: number | null
           id_pago?: number
+          id_plan_pago?: number | null
           monto_capital?: number
           monto_interes?: number
           monto_otros?: number
@@ -1074,6 +1490,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "contrato_pago"
             referencedColumns: ["id_pago"]
+          },
+          {
+            foreignKeyName: "contrato_pago_aplicacion_id_plan_pago_fkey"
+            columns: ["id_plan_pago"]
+            isOneToOne: false
+            referencedRelation: "contrato_plan_pago"
+            referencedColumns: ["id_plan_pago"]
           },
         ]
       }
@@ -1506,6 +1929,54 @@ export type Database = {
         }
         Relationships: []
       }
+      usuario_administracion_auditoria: {
+        Row: {
+          accion: string
+          actor_email: string | null
+          actor_id: string
+          cambios: Json
+          created_at: string
+          detalle_error: string | null
+          id_auditoria: number
+          id_operacion: string
+          resultado: string
+          rol_anterior: string | null
+          rol_nuevo: string | null
+          target_email: string | null
+          target_id: string | null
+        }
+        Insert: {
+          accion: string
+          actor_email?: string | null
+          actor_id: string
+          cambios?: Json
+          created_at?: string
+          detalle_error?: string | null
+          id_auditoria?: number
+          id_operacion: string
+          resultado: string
+          rol_anterior?: string | null
+          rol_nuevo?: string | null
+          target_email?: string | null
+          target_id?: string | null
+        }
+        Update: {
+          accion?: string
+          actor_email?: string | null
+          actor_id?: string
+          cambios?: Json
+          created_at?: string
+          detalle_error?: string | null
+          id_auditoria?: number
+          id_operacion?: string
+          resultado?: string
+          rol_anterior?: string | null
+          rol_nuevo?: string | null
+          target_email?: string | null
+          target_id?: string | null
+        }
+        Relationships: []
+      }
       vendedor: {
         Row: {
           id_vendedor: number
@@ -1523,6 +1994,38 @@ export type Database = {
       }
     }
     Views: {
+      vw_contrato_pago_extraordinario_historial: {
+        Row: {
+          ahorro_intereses: number | null
+          created_at: string | null
+          cuota_base: number | null
+          cuotas_restantes_antes: number | null
+          cuotas_restantes_despues: number | null
+          estado_pago: string | null
+          fecha_fin_antes: string | null
+          fecha_fin_despues: string | null
+          fecha_pago: string | null
+          fecha_pago_timestamp: string | null
+          id_contrato: number | null
+          id_pago: number | null
+          id_plan_origen: number | null
+          id_plan_resultante: number | null
+          interes_futuro_antes: number | null
+          interes_futuro_despues: number | null
+          liquidacion_total: boolean | null
+          metodo_pago: string | null
+          monto_extraordinario: number | null
+          numero_contrato: string | null
+          numero_factura: string | null
+          observacion: string | null
+          referencia: string | null
+          registrado_por: string | null
+          saldo_capital_antes: number | null
+          saldo_capital_despues: number | null
+          tasa_interes_anual: number | null
+        }
+        Relationships: []
+      }
       vw_control_cuotas_plan_vigente: {
         Row: {
           capital_amortizado_acumulado: number | null
@@ -1581,6 +2084,7 @@ export type Database = {
           id_cliente: number | null
           id_contrato: number | null
           id_plan_pago: number | null
+          mora_pendiente: number | null
           monto_vencido: number | null
           numero_contrato: string | null
           numero_formulario: string | null
@@ -1588,9 +2092,14 @@ export type Database = {
           plan_version: number | null
           plazo_meses: number | null
           proxima_fecha_vencimiento: string | null
+          proxima_fecha_calculo_mora: string | null
           saldo_capital_pendiente: number | null
           saldo_inicial: number | null
+          total_vencido_con_mora: number | null
           tipo_plan: string | null
+          ultima_base_moratoria: number | null
+          ultima_fecha_calculo_mora: string | null
+          ultimo_interes_moratorio_generado: number | null
         }
         Relationships: [
           {
@@ -1641,12 +2150,20 @@ export type Database = {
           fecha_inicio_mantenimiento: string | null
           id_cliente: number | null
           id_contrato: number | null
+          mora_generada: number | null
+          mora_pagada: number | null
+          mora_pendiente: number | null
           monto_mantenimiento_anual: number | null
           monto_vencido: number | null
           numero_contrato: string | null
           numero_formulario: string | null
           proxima_fecha_vencimiento: string | null
+          proxima_fecha_calculo_mora: string | null
           total_pendiente: number | null
+          total_pendiente_con_mora: number | null
+          ultima_base_moratoria: number | null
+          ultima_fecha_calculo_mora: string | null
+          ultimo_interes_moratorio_generado: number | null
           ultimo_periodo_cubierto_hasta: string | null
         }
         Relationships: [
@@ -1671,6 +2188,10 @@ export type Database = {
       }
       calcular_fecha_vencimiento_cuota: {
         Args: { p_fecha_primera_cuota: string; p_numero_cuota: number }
+        Returns: string
+      }
+      calcular_fecha_corte_mora_mensual: {
+        Args: { p_fecha_ancla: string; p_meses_desde_ancla: number }
         Returns: string
       }
       crear_arreglo_pago_contrato: {
@@ -1715,10 +2236,55 @@ export type Database = {
         }
         Returns: Json
       }
+      obtener_proxima_fecha_calculo_mora: {
+        Args: { p_id_contrato: number }
+        Returns: string
+      }
+      obtener_proxima_fecha_calculo_mora_mantenimiento: {
+        Args: { p_id_contrato: number }
+        Returns: string
+      }
+      proyectar_pago_extraordinario_contrato: {
+        Args: {
+          p_fecha_pago: string
+          p_id_contrato: number
+          p_monto_extraordinario: number
+        }
+        Returns: Json
+      }
       registrar_pago_contrato: {
         Args: {
           p_fecha_pago?: string
           p_id_contrato: number
+          p_idempotency_key?: string
+          p_metodo_pago?: string
+          p_monto_total: number
+          p_numero_factura?: string
+          p_observacion?: string
+          p_referencia?: string
+          p_usuario?: string
+        }
+        Returns: Json
+      }
+      registrar_pago_extraordinario_contrato: {
+        Args: {
+          p_fecha_pago?: string
+          p_id_contrato: number
+          p_idempotency_key?: string
+          p_metodo_pago?: string
+          p_monto_total: number
+          p_numero_factura?: string
+          p_observacion?: string
+          p_referencia?: string
+          p_usuario?: string
+        }
+        Returns: Json
+      }
+      registrar_pago_mora_contrato: {
+        Args: {
+          p_fecha_pago?: string
+          p_id_contrato: number
+          p_idempotency_key?: string
           p_metodo_pago?: string
           p_monto_total: number
           p_numero_factura?: string
@@ -1732,6 +2298,7 @@ export type Database = {
         Args: {
           p_fecha_pago?: string
           p_id_contrato: number
+          p_idempotency_key?: string
           p_metodo_pago?: string
           p_monto_total: number
           p_observacion?: string
@@ -1759,6 +2326,52 @@ export type Database = {
       }
       sincronizar_cuotas_mantenimiento_vigentes: {
         Args: { p_usuario?: string }
+        Returns: Json
+      }
+      registrar_pago_mora_mantenimiento: {
+        Args: {
+          p_fecha_pago?: string
+          p_id_contrato: number
+          p_idempotency_key?: string
+          p_metodo_pago?: string
+          p_monto_total: number
+          p_observacion?: string
+          p_referencia?: string
+          p_usuario?: string
+        }
+        Returns: Json
+      }
+      sincronizar_interes_moratorio_contrato: {
+        Args: {
+          p_fecha_hasta?: string
+          p_id_contrato: number
+          p_usuario?: string
+        }
+        Returns: Json
+      }
+      sincronizar_interes_moratorio_mantenimiento_contrato: {
+        Args: {
+          p_fecha_hasta?: string
+          p_id_contrato: number
+          p_usuario?: string
+        }
+        Returns: Json
+      }
+      sincronizar_interes_moratorio_masivo: {
+        Args: {
+          p_fecha_hasta?: string
+          p_limite?: number
+          p_usuario?: string
+        }
+        Returns: Json
+      }
+      simular_pago_extraordinario_contrato: {
+        Args: {
+          p_fecha_pago?: string
+          p_id_contrato: number
+          p_monto_extraordinario: number
+          p_usuario?: string
+        }
         Returns: Json
       }
       sumar_meses_respetando_dia: {

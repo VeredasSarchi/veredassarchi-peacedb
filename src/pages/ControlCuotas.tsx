@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import {
@@ -14,10 +14,12 @@ import {
   Loader2,
   RefreshCw,
   Search,
+  TrendingDown,
 } from "lucide-react";
 import { useAuth } from "@/auth/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import type { Database, Json, Tables } from "@/integrations/supabase/types";
+import { PAYMENT_METHOD_OPTIONS } from "@/lib/payment-methods";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -71,8 +73,14 @@ type ControlCuotasPlanRow =
   Database["public"]["Views"]["vw_control_cuotas_plan_vigente"]["Row"];
 type PagoRow = Tables<"contrato_pago">;
 type PagoAplicacionRow = Tables<"contrato_pago_aplicacion">;
+type CuotaReferenciaRow = Pick<
+  Tables<"contrato_cuota">,
+  "id_cuota" | "id_plan_pago" | "numero_cuota"
+>;
 type CargoRow = Tables<"contrato_cargo">;
 type EventoFinancieroRow = Tables<"contrato_evento_financiero">;
+type MoratoryInterestCalculationRow =
+  Tables<"contrato_interes_moratorio_calculo">;
 
 type FilterMode =
   | "vigentes"
@@ -81,7 +89,33 @@ type FilterMode =
   | "sin-plan"
   | "todos";
 
-type FinancialDetailTab = "cuotas" | "pagos" | "cargos" | "historial";
+type FinancialDetailTab =
+  | "cuotas"
+  | "pagos"
+  | "mora"
+  | "cargos"
+  | "historial";
+
+type RegularPaymentKind = "CUOTA" | "EXTRAORDINARIO";
+type PaymentKind = RegularPaymentKind | "MORA";
+
+type ExtraordinaryPaymentSimulation = {
+  requestKey: string;
+  permitido: boolean;
+  motivoBloqueo: string | null;
+  montoExtraordinario: number;
+  cuotaBase: number;
+  saldoCapitalAntes: number;
+  saldoCapitalDespues: number;
+  cuotasRestantesAntes: number;
+  cuotasRestantesDespues: number;
+  interesFuturoAntes: number;
+  interesFuturoDespues: number;
+  ahorroIntereses: number;
+  fechaFinAntes: string | null;
+  fechaFinDespues: string | null;
+  liquidacionTotal: boolean;
+};
 
 type PaymentFormState = {
   montoTotal: string;
@@ -90,6 +124,7 @@ type PaymentFormState = {
   referencia: string;
   numeroFactura: string;
   observacion: string;
+  idempotencyKey: string;
 };
 
 type ArrangementFormState = {
@@ -101,22 +136,40 @@ type ArrangementFormState = {
 };
 
 type DetailState = {
+  contractId: number | null;
   cuotas: ControlCuotasPlanRow[];
+  cuotasReferencia: CuotaReferenciaRow[];
   pagos: PagoRow[];
   aplicaciones: PagoAplicacionRow[];
   cargos: CargoRow[];
+  calculosMora: MoratoryInterestCalculationRow[];
   eventos: EventoFinancieroRow[];
 };
+
+function getEmptyDetailState(): DetailState {
+  return {
+    contractId: null,
+    cuotas: [],
+    cuotasReferencia: [],
+    pagos: [],
+    aplicaciones: [],
+    cargos: [],
+    calculosMora: [],
+    eventos: [],
+  };
+}
 
 type CobranzaAlert = {
   idContrato: number;
   clienteNombre: string;
   numeroContrato: string;
   numeroFormulario: string | null;
-  proximaFecha: string;
+  proximaFecha: string | null;
   dias: number;
   cuotasVencidas: number;
   montoVencido: number;
+  moraPendiente: number;
+  totalVencidoConMora: number;
 };
 
 type JsonRecord = { [key: string]: Json | undefined };
@@ -128,7 +181,7 @@ type EventDetailItem = {
 
 const FILTER_LABELS: Record<FilterMode, string> = {
   vigentes: "Solo vigentes",
-  "con-vencidas": "Con cuotas vencidas",
+  "con-vencidas": "Con saldo vencido",
   "con-plan": "Con plan generado",
   "sin-plan": "Sin plan generado",
   todos: "Todos",
@@ -186,6 +239,10 @@ function formatPercent(value: number | null | undefined): string {
     return "0 %";
   }
   return `${Number(value).toFixed(2)} %`;
+}
+
+function formatFractionAsPercent(value: number | null | undefined): string {
+  return formatPercent((value ?? 0) * 100);
 }
 
 function normalizeSearchValue(value: string | null | undefined): string {
@@ -300,9 +357,15 @@ function getPlanTypeLabel(tipoPlan: string | null | undefined): string {
   if (!tipoPlan) return "Sin plan";
   if (tipoPlan === "ORIGINAL") return "Plan original";
   if (tipoPlan === "ARREGLO_PAGO") return "Arreglo de pago";
+  if (tipoPlan === "EXTRAORDINARIO") return "Plan por pago extraordinario";
   if (tipoPlan === "BACKFILL") return "Plan generado";
   if (tipoPlan === "REESTRUCTURACION") return "Reestructuracion";
   return tipoPlan;
+}
+
+function getChargeTypeLabel(type: string): string {
+  if (type === "INTERES_MORATORIO") return "Interes moratorio";
+  return formatTechnicalLabel(type.toLowerCase());
 }
 
 function getErrorMessage(error: unknown, fallback: string): string {
@@ -315,6 +378,198 @@ function getErrorMessage(error: unknown, fallback: string): string {
   return fallback;
 }
 
+function getRpcResultRecord(value: unknown): Record<string, unknown> | null {
+  const candidate = Array.isArray(value) ? value[0] : value;
+  if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) {
+    return null;
+  }
+
+  const record = candidate as Record<string, unknown>;
+  const nested = record.resultado ?? record.simulacion;
+  if (nested && typeof nested === "object" && !Array.isArray(nested)) {
+    return nested as Record<string, unknown>;
+  }
+  return record;
+}
+
+function getRpcValue(
+  record: Record<string, unknown>,
+  ...keys: string[]
+): unknown {
+  for (const key of keys) {
+    if (record[key] !== undefined && record[key] !== null) {
+      return record[key];
+    }
+  }
+  return null;
+}
+
+function getRpcNumber(
+  record: Record<string, unknown>,
+  ...keys: string[]
+): number | null {
+  const value = getRpcValue(record, ...keys);
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
+
+function getRpcBoolean(
+  record: Record<string, unknown>,
+  ...keys: string[]
+): boolean {
+  const value = getRpcValue(record, ...keys);
+  return value === true || value === "true";
+}
+
+function getRpcText(
+  record: Record<string, unknown>,
+  ...keys: string[]
+): string | null {
+  const value = getRpcValue(record, ...keys);
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function parseExtraordinaryPaymentSimulation(
+  value: unknown,
+): ExtraordinaryPaymentSimulation | null {
+  const record = getRpcResultRecord(value);
+  if (!record) return null;
+
+  const permitido = getRpcBoolean(
+    record,
+    "permitido",
+    "puede_registrar",
+    "elegible",
+  );
+  const motivoBloqueo = getRpcText(
+    record,
+    "motivo_bloqueo",
+    "razon_bloqueo",
+    "motivo",
+    "mensaje",
+  );
+
+  if (!permitido) {
+    return {
+      permitido,
+      requestKey: "",
+      motivoBloqueo,
+      montoExtraordinario:
+        getRpcNumber(
+          record,
+          "monto_extraordinario",
+          "monto_solicitado",
+          "monto",
+        ) ?? 0,
+      cuotaBase: getRpcNumber(record, "cuota_base") ?? 0,
+      saldoCapitalAntes: 0,
+      saldoCapitalDespues: 0,
+      cuotasRestantesAntes: 0,
+      cuotasRestantesDespues: 0,
+      interesFuturoAntes: 0,
+      interesFuturoDespues: 0,
+      ahorroIntereses: 0,
+      fechaFinAntes: null,
+      fechaFinDespues: null,
+      liquidacionTotal: getRpcBoolean(record, "liquidacion_total"),
+    };
+  }
+
+  const montoExtraordinario = getRpcNumber(
+    record,
+    "monto_extraordinario",
+    "monto_solicitado",
+    "monto",
+  );
+  const saldoCapitalAntes = getRpcNumber(
+    record,
+    "saldo_capital_antes",
+    "saldo_antes",
+  );
+  const saldoCapitalDespues = getRpcNumber(
+    record,
+    "saldo_capital_despues",
+    "saldo_despues",
+  );
+  const cuotasRestantesAntes = getRpcNumber(
+    record,
+    "cuotas_restantes_antes",
+    "cantidad_cuotas_antes",
+  );
+  const cuotasRestantesDespues = getRpcNumber(
+    record,
+    "cuotas_restantes_despues",
+    "cantidad_cuotas_despues",
+  );
+  const interesFuturoAntes = getRpcNumber(
+    record,
+    "interes_futuro_antes",
+    "intereses_futuros_antes",
+  );
+  const interesFuturoDespues = getRpcNumber(
+    record,
+    "interes_futuro_despues",
+    "intereses_futuros_despues",
+  );
+  const ahorroIntereses = getRpcNumber(
+    record,
+    "ahorro_intereses",
+    "interes_ahorrado",
+  );
+
+  if (
+    montoExtraordinario === null ||
+    saldoCapitalAntes === null ||
+    saldoCapitalDespues === null ||
+    cuotasRestantesAntes === null ||
+    cuotasRestantesDespues === null ||
+    interesFuturoAntes === null ||
+    interesFuturoDespues === null ||
+    ahorroIntereses === null
+  ) {
+    return null;
+  }
+
+  return {
+    permitido,
+    requestKey: "",
+    motivoBloqueo,
+    montoExtraordinario,
+    cuotaBase: getRpcNumber(record, "cuota_base") ?? 0,
+    saldoCapitalAntes,
+    saldoCapitalDespues,
+    cuotasRestantesAntes,
+    cuotasRestantesDespues,
+    interesFuturoAntes,
+    interesFuturoDespues,
+    ahorroIntereses,
+    fechaFinAntes: getRpcText(
+      record,
+      "fecha_fin_antes",
+      "fecha_final_antes",
+      "fecha_ultima_cuota_antes",
+    ),
+    fechaFinDespues: getRpcText(
+      record,
+      "fecha_fin_despues",
+      "fecha_final_despues",
+      "fecha_ultima_cuota_despues",
+    ),
+    liquidacionTotal: getRpcBoolean(record, "liquidacion_total"),
+  };
+}
+
+function createPaymentIdempotencyKey(): string {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+    return crypto.randomUUID();
+  }
+  return `pago-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
 function getInitialPaymentForm(): PaymentFormState {
   return {
     montoTotal: "",
@@ -323,7 +578,62 @@ function getInitialPaymentForm(): PaymentFormState {
     referencia: "",
     numeroFactura: "",
     observacion: "",
+    idempotencyKey: createPaymentIdempotencyKey(),
   };
+}
+
+function isMoratoryCharge(cargo: CargoRow | null | undefined): boolean {
+  return cargo?.tipo_cargo === "INTERES_MORATORIO";
+}
+
+function getApplicationPlanId(
+  application: PagoAplicacionRow,
+): number | null {
+  if (!("id_plan_pago" in application)) return null;
+  const value = application.id_plan_pago;
+  return typeof value === "number" ? value : null;
+}
+
+async function synchronizeMoratoryInterest(
+  contractId: number,
+  untilDate: string | null,
+  userName: string,
+): Promise<void> {
+  const { error } = await supabase.rpc(
+    "sincronizar_interes_moratorio_contrato",
+    {
+      p_id_contrato: contractId,
+      p_fecha_hasta: untilDate,
+      p_usuario: userName,
+    },
+  );
+
+  if (error) {
+    throw error;
+  }
+}
+
+function getPaymentKind(
+  pago: PagoRow,
+  aplicaciones: PagoAplicacionRow[],
+  cargoById: Map<number, CargoRow>,
+): PaymentKind {
+  const explicitKind = pago.tipo_pago;
+  if (
+    explicitKind === "MORA" ||
+    explicitKind === "CUOTA" ||
+    explicitKind === "EXTRAORDINARIO"
+  ) {
+    return explicitKind;
+  }
+
+  return aplicaciones.some((application) =>
+    application.id_cargo !== null
+      ? isMoratoryCharge(cargoById.get(application.id_cargo))
+      : false,
+  )
+    ? "MORA"
+    : "CUOTA";
 }
 
 function asRecord(value: Json | undefined): JsonRecord | null {
@@ -368,6 +678,25 @@ function formatTechnicalLabel(key: string): string {
     fecha_primera_cuota: "Primera cuota",
     numero_formulario: "Formulario",
     tipo_plan: "Tipo de plan",
+    tipo_pago: "Concepto del pago",
+    periodo_mora: "Periodo de mora",
+    fecha_corte: "Fecha de corte",
+    tasa_mensual: "Tasa mensual",
+    dias_gracia: "Dias de gracia",
+    base_cuotas_vencidas: "Cuotas vencidas",
+    base_mora_anterior: "Mora anterior",
+    base_total: "Base moratoria total",
+    monto_generado: "Mora generada",
+    monto_extraordinario: "Pago extraordinario",
+    saldo_capital_antes: "Saldo de capital anterior",
+    saldo_capital_despues: "Nuevo saldo de capital",
+    cuotas_restantes_antes: "Cuotas restantes anteriores",
+    cuotas_restantes_despues: "Nuevas cuotas restantes",
+    interes_futuro_antes: "Intereses futuros anteriores",
+    interes_futuro_despues: "Nuevos intereses futuros",
+    ahorro_intereses: "Ahorro estimado de intereses",
+    fecha_fin_antes: "Fecha de finalizacion anterior",
+    fecha_fin_despues: "Nueva fecha de finalizacion",
   };
 
   return (
@@ -383,11 +712,20 @@ function formatGenericValue(key: string, value: Json | undefined): string | null
   if (value === null || value === undefined) return null;
 
   if (typeof value === "number") {
-    if (key.includes("monto") || key.includes("saldo") || key.includes("cuota_base")) {
+    if (
+      key.includes("monto") ||
+      key.includes("saldo") ||
+      key.includes("cuota_base") ||
+      key.includes("interes_futuro") ||
+      key.includes("ahorro_intereses") ||
+      key.startsWith("base_")
+    ) {
       return formatCurrency(value);
     }
     if (key.includes("tasa")) {
-      return formatPercent(value);
+      return key === "tasa_mensual"
+        ? formatFractionAsPercent(value)
+        : formatPercent(value);
     }
     if (key.includes("plazo")) {
       return `${value} meses`;
@@ -399,7 +737,7 @@ function formatGenericValue(key: string, value: Json | undefined): string | null
   }
 
   if (typeof value === "string") {
-    if (key.includes("fecha")) {
+    if (key.includes("fecha") || key.includes("periodo")) {
       return formatDate(value);
     }
     return value;
@@ -418,6 +756,7 @@ function isOperationalHiddenEventKey(key: string): boolean {
     key === "ok" ||
     key === "version" ||
     key === "cuotas_generadas" ||
+    key === "idempotency_key" ||
     key.startsWith("id_")
   );
 }
@@ -463,7 +802,10 @@ function buildEventDetails(event: EventoFinancieroRow): EventDetailItem[] {
     return details;
   }
 
-  if (event.tipo_evento === "REGISTRO_PAGO") {
+  if (
+    event.tipo_evento === "REGISTRO_PAGO" ||
+    event.tipo_evento === "PAGO_MORA"
+  ) {
     const montoTotal = getNumberDetail(payload, "monto_total");
     const montoAplicado = getNumberDetail(payload, "monto_aplicado");
 
@@ -471,6 +813,10 @@ function buildEventDetails(event: EventoFinancieroRow): EventDetailItem[] {
     if (montoAplicado !== null) details.push({ label: "Monto aplicado", value: formatCurrency(montoAplicado) });
 
     return details;
+  }
+
+  if (event.tipo_evento === "PAGO_EXTRAORDINARIO") {
+    return buildGenericDetails(payload);
   }
 
   if (event.tipo_evento === "ARREGLO_PAGO" || event.tipo_evento === "REESTRUCTURACION") {
@@ -500,6 +846,11 @@ function getEventTypeLabel(type: string): string {
     REESTRUCTURACION: "Reestructuracion",
     CONGELAMIENTO: "Congelamiento",
     REGISTRO_PAGO: "Pago registrado",
+    CALCULO_MORA: "Calculo de mora",
+    PAGO_MORA: "Pago de mora",
+    PAGO_EXTRAORDINARIO: "Pago extraordinario",
+    AJUSTE_MORA: "Ajuste de mora",
+    ANULACION_MORA: "Anulacion de mora",
     ANULACION_PAGO: "Pago anulado",
     AJUSTE_MANUAL: "Ajuste manual",
   };
@@ -553,14 +904,9 @@ export default function ControlCuotas() {
   const [rows, setRows] = useState<ControlCuotasResumenRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedContractId, setSelectedContractId] = useState<number | null>(null);
-  const [detail, setDetail] = useState<DetailState>({
-    cuotas: [],
-    pagos: [],
-    aplicaciones: [],
-    cargos: [],
-    eventos: [],
-  });
+  const [detail, setDetail] = useState<DetailState>(getEmptyDetailState);
   const [detailLoading, setDetailLoading] = useState(false);
+  const detailRequestIdRef = useRef(0);
   const [searchTerm, setSearchTerm] = useState("");
   const [filterMode, setFilterMode] = useState<FilterMode>("vigentes");
   const [selectedDetailTab, setSelectedDetailTab] =
@@ -568,9 +914,16 @@ export default function ControlCuotas() {
   const [backfillOpen, setBackfillOpen] = useState(false);
   const [backfillDate, setBackfillDate] = useState("");
   const [paymentOpen, setPaymentOpen] = useState(false);
+  const [paymentKind, setPaymentKind] = useState<PaymentKind>("CUOTA");
   const [paymentForm, setPaymentForm] = useState<PaymentFormState>(
     getInitialPaymentForm(),
   );
+  const [extraordinarySimulation, setExtraordinarySimulation] =
+    useState<ExtraordinaryPaymentSimulation | null>(null);
+  const [extraordinarySimulationLoading, setExtraordinarySimulationLoading] =
+    useState(false);
+  const [extraordinarySimulationError, setExtraordinarySimulationError] =
+    useState<string | null>(null);
   const [arrangementOpen, setArrangementOpen] = useState(false);
   const [arrangementForm, setArrangementForm] = useState<ArrangementFormState>({
     fechaPrimeraCuota: "",
@@ -616,9 +969,37 @@ export default function ControlCuotas() {
   }, []);
 
   const loadDetail = useCallback(async (contractId: number) => {
+    const requestId = ++detailRequestIdRef.current;
+    setDetail(getEmptyDetailState());
     setDetailLoading(true);
     try {
-      const [cuotasRes, pagosRes, cargosRes, eventosRes] = await Promise.all([
+      if (isAdmin) {
+        try {
+          await synchronizeMoratoryInterest(
+            contractId,
+            getTodayInputValue(),
+            user?.email ?? role ?? "usuario",
+          );
+        } catch (syncError) {
+          console.error("Error sincronizando interes moratorio", syncError);
+          if (requestId === detailRequestIdRef.current) {
+            toast.warning(
+              "No se pudo actualizar la mora; se muestran los ultimos datos disponibles.",
+            );
+          }
+        }
+      }
+
+      if (requestId !== detailRequestIdRef.current) return;
+
+      const [
+        cuotasRes,
+        pagosRes,
+        cargosRes,
+        calculosMoraRes,
+        eventosRes,
+        selectedSummaryRes,
+      ] = await Promise.all([
         supabase
           .from("vw_control_cuotas_plan_vigente")
           .select("*")
@@ -635,21 +1016,34 @@ export default function ControlCuotas() {
           .eq("id_contrato", contractId)
           .order("fecha_vencimiento", { ascending: true }),
         supabase
+          .from("contrato_interes_moratorio_calculo")
+          .select("*")
+          .eq("id_contrato", contractId)
+          .order("fecha_corte", { ascending: false }),
+        supabase
           .from("contrato_evento_financiero")
           .select("*")
           .eq("id_contrato", contractId)
           .order("fecha_evento", { ascending: false }),
+        supabase
+          .from("vw_control_cuotas_resumen")
+          .select("*")
+          .eq("id_contrato", contractId)
+          .maybeSingle(),
       ]);
 
       if (cuotasRes.error) throw cuotasRes.error;
       if (pagosRes.error) throw pagosRes.error;
       if (cargosRes.error) throw cargosRes.error;
+      if (calculosMoraRes.error) throw calculosMoraRes.error;
       if (eventosRes.error) throw eventosRes.error;
+      if (selectedSummaryRes.error) throw selectedSummaryRes.error;
 
       const pagos = pagosRes.data ?? [];
       const paymentIds = pagos.map((pago) => pago.id_pago);
 
       let aplicaciones: PagoAplicacionRow[] = [];
+      let cuotasReferencia: CuotaReferenciaRow[] = [];
       if (paymentIds.length > 0) {
         const aplicacionesRes = await supabase
           .from("contrato_pago_aplicacion")
@@ -662,31 +1056,61 @@ export default function ControlCuotas() {
         }
 
         aplicaciones = aplicacionesRes.data ?? [];
+
+        const historicalQuotaIds = Array.from(
+          new Set(
+            aplicaciones.flatMap((aplicacion) =>
+              aplicacion.id_cuota === null ? [] : [aplicacion.id_cuota],
+            ),
+          ),
+        );
+
+        if (historicalQuotaIds.length > 0) {
+          const cuotasReferenciaRes = await supabase
+            .from("contrato_cuota")
+            .select("id_cuota,id_plan_pago,numero_cuota")
+            .in("id_cuota", historicalQuotaIds);
+
+          if (cuotasReferenciaRes.error) {
+            throw cuotasReferenciaRes.error;
+          }
+
+          cuotasReferencia = cuotasReferenciaRes.data ?? [];
+        }
       }
 
+      if (requestId !== detailRequestIdRef.current) return;
+
       setDetail({
+        contractId,
         cuotas: cuotasRes.data ?? [],
+        cuotasReferencia,
         pagos,
         aplicaciones,
         cargos: cargosRes.data ?? [],
+        calculosMora: calculosMoraRes.data ?? [],
         eventos: eventosRes.data ?? [],
       });
+      if (selectedSummaryRes.data) {
+        setRows((current) =>
+          current.map((row) =>
+            row.id_contrato === contractId ? selectedSummaryRes.data : row,
+          ),
+        );
+      }
     } catch (error) {
+      if (requestId !== detailRequestIdRef.current) return;
       console.error("Error cargando detalle financiero", error);
       toast.error(
         getErrorMessage(error, "No se pudo cargar el detalle del contrato"),
       );
-      setDetail({
-        cuotas: [],
-        pagos: [],
-        aplicaciones: [],
-        cargos: [],
-        eventos: [],
-      });
+      setDetail(getEmptyDetailState());
     } finally {
-      setDetailLoading(false);
+      if (requestId === detailRequestIdRef.current) {
+        setDetailLoading(false);
+      }
     }
-  }, []);
+  }, [isAdmin, role, user?.email]);
 
   useEffect(() => {
     void loadResumen();
@@ -700,7 +1124,9 @@ export default function ControlCuotas() {
           return row.estado_contrato === "VIGENTE";
         }
         if (filterMode === "con-vencidas") {
-          return (row.cuotas_vencidas ?? 0) > 0;
+          return (
+            (row.cuotas_vencidas ?? 0) > 0 || (row.mora_pendiente ?? 0) > 0
+          );
         }
         if (filterMode === "con-plan") {
           return row.id_plan_pago !== null;
@@ -726,8 +1152,14 @@ export default function ControlCuotas() {
       })
       .sort((a, b) => {
         const overdueDelta =
-          Number((b.cuotas_vencidas ?? 0) > 0) -
-          Number((a.cuotas_vencidas ?? 0) > 0);
+          Number(
+            (b.total_vencido_con_mora ??
+              (b.monto_vencido ?? 0) + (b.mora_pendiente ?? 0)) > 0,
+          ) -
+          Number(
+            (a.total_vencido_con_mora ??
+              (a.monto_vencido ?? 0) + (a.mora_pendiente ?? 0)) > 0,
+          );
         if (overdueDelta !== 0) return overdueDelta;
 
         const aTime =
@@ -744,13 +1176,9 @@ export default function ControlCuotas() {
   useEffect(() => {
     if (filteredRows.length === 0) {
       setSelectedContractId(null);
-      setDetail({
-        cuotas: [],
-        pagos: [],
-        aplicaciones: [],
-        cargos: [],
-        eventos: [],
-      });
+      detailRequestIdRef.current += 1;
+      setDetail(getEmptyDetailState());
+      setDetailLoading(false);
       return;
     }
 
@@ -764,6 +1192,9 @@ export default function ControlCuotas() {
 
   useEffect(() => {
     if (!selectedContractId) {
+      detailRequestIdRef.current += 1;
+      setDetail(getEmptyDetailState());
+      setDetailLoading(false);
       return;
     }
     void loadDetail(selectedContractId);
@@ -777,6 +1208,91 @@ export default function ControlCuotas() {
     [filteredRows, rows, selectedContractId],
   );
 
+  useEffect(() => {
+    if (
+      !paymentOpen ||
+      paymentKind !== "EXTRAORDINARIO" ||
+      !selectedRow?.id_contrato
+    ) {
+      setExtraordinarySimulation(null);
+      setExtraordinarySimulationError(null);
+      setExtraordinarySimulationLoading(false);
+      return;
+    }
+
+    const montoTotal = Number(paymentForm.montoTotal);
+    if (
+      !Number.isFinite(montoTotal) ||
+      montoTotal <= 0 ||
+      !paymentForm.fechaPago
+    ) {
+      setExtraordinarySimulation(null);
+      setExtraordinarySimulationError(null);
+      setExtraordinarySimulationLoading(false);
+      return;
+    }
+
+    const requestKey = `${montoTotal}|${paymentForm.fechaPago}`;
+    let cancelled = false;
+    const timeoutId = window.setTimeout(async () => {
+      setExtraordinarySimulation(null);
+      setExtraordinarySimulationError(null);
+      setExtraordinarySimulationLoading(true);
+
+      try {
+        const { data, error } = await supabase.rpc(
+          "simular_pago_extraordinario_contrato",
+          {
+            p_id_contrato: selectedRow.id_contrato,
+            p_monto_extraordinario: montoTotal,
+            p_fecha_pago: toPaymentTimestamp(paymentForm.fechaPago),
+            p_usuario: user?.email ?? role ?? "usuario",
+          },
+        );
+
+        if (error) throw error;
+
+        const simulation = parseExtraordinaryPaymentSimulation(data);
+        if (!simulation) {
+          throw new Error(
+            "La simulacion no devolvio el detalle financiero esperado.",
+          );
+        }
+
+        if (!cancelled) {
+          setExtraordinarySimulation({ ...simulation, requestKey });
+        }
+      } catch (error) {
+        if (!cancelled) {
+          console.error("Error simulando pago extraordinario", error);
+          setExtraordinarySimulationError(
+            getErrorMessage(
+              error,
+              "No se pudo calcular la vista previa del pago extraordinario.",
+            ),
+          );
+        }
+      } finally {
+        if (!cancelled) {
+          setExtraordinarySimulationLoading(false);
+        }
+      }
+    }, 450);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeoutId);
+    };
+  }, [
+    paymentForm.fechaPago,
+    paymentForm.montoTotal,
+    paymentKind,
+    paymentOpen,
+    role,
+    selectedRow?.id_contrato,
+    user?.email,
+  ]);
+
   const quotasByPaymentId = useMemo(() => {
     const map = new Map<number, PagoAplicacionRow[]>();
     detail.aplicaciones.forEach((application) => {
@@ -788,14 +1304,20 @@ export default function ControlCuotas() {
   }, [detail.aplicaciones]);
 
   const quotaById = useMemo(() => {
-    const map = new Map<number, ControlCuotasPlanRow>();
+    const map = new Map<
+      number,
+      Pick<ControlCuotasPlanRow, "id_cuota" | "id_plan_pago" | "numero_cuota">
+    >();
+    detail.cuotasReferencia.forEach((cuota) => {
+      map.set(cuota.id_cuota, cuota);
+    });
     detail.cuotas.forEach((cuota) => {
       if (cuota.id_cuota !== null) {
         map.set(cuota.id_cuota, cuota);
       }
     });
     return map;
-  }, [detail.cuotas]);
+  }, [detail.cuotas, detail.cuotasReferencia]);
 
   const cargoById = useMemo(() => {
     const map = new Map<number, CargoRow>();
@@ -810,7 +1332,9 @@ export default function ControlCuotas() {
     const conPlan = filteredRows.filter((row) => row.id_plan_pago !== null).length;
     const sinPlan = filteredRows.filter((row) => row.id_plan_pago === null).length;
     const conVencidas = filteredRows.filter(
-      (row) => (row.cuotas_vencidas ?? 0) > 0,
+      (row) =>
+        (row.total_vencido_con_mora ??
+          (row.monto_vencido ?? 0) + (row.mora_pendiente ?? 0)) > 0,
     ).length;
     const montoVencido = filteredRows.reduce(
       (acc, row) => acc + (row.monto_vencido ?? 0),
@@ -818,6 +1342,17 @@ export default function ControlCuotas() {
     );
     const saldoCapital = filteredRows.reduce(
       (acc, row) => acc + (row.saldo_capital_pendiente ?? 0),
+      0,
+    );
+    const moraPendiente = filteredRows.reduce(
+      (acc, row) => acc + (row.mora_pendiente ?? 0),
+      0,
+    );
+    const totalVencidoConMora = filteredRows.reduce(
+      (acc, row) =>
+        acc +
+        (row.total_vencido_con_mora ??
+          (row.monto_vencido ?? 0) + (row.mora_pendiente ?? 0)),
       0,
     );
 
@@ -828,6 +1363,8 @@ export default function ControlCuotas() {
       conVencidas,
       montoVencido,
       saldoCapital,
+      moraPendiente,
+      totalVencidoConMora,
     };
   }, [filteredRows]);
 
@@ -837,17 +1374,13 @@ export default function ControlCuotas() {
         row.estado_contrato === "VIGENTE" &&
         row.id_plan_pago !== null &&
         row.id_contrato !== null &&
-        row.proxima_fecha_vencimiento,
+        (row.proxima_fecha_vencimiento || (row.mora_pendiente ?? 0) > 0),
     );
 
     const normalized = baseRows
       .map((row) => {
         const dias = getDaysUntilDate(row.proxima_fecha_vencimiento);
-        if (
-          dias === null ||
-          row.id_contrato === null ||
-          !row.proxima_fecha_vencimiento
-        ) {
+        if (row.id_contrato === null) {
           return null;
         }
 
@@ -857,9 +1390,13 @@ export default function ControlCuotas() {
           numeroContrato: row.numero_contrato || "sin numero",
           numeroFormulario: row.numero_formulario,
           proximaFecha: row.proxima_fecha_vencimiento,
-          dias,
+          dias: dias ?? 0,
           cuotasVencidas: row.cuotas_vencidas ?? 0,
           montoVencido: row.monto_vencido ?? 0,
+          moraPendiente: row.mora_pendiente ?? 0,
+          totalVencidoConMora:
+            row.total_vencido_con_mora ??
+            (row.monto_vencido ?? 0) + (row.mora_pendiente ?? 0),
         } satisfies CobranzaAlert;
       })
       .filter((alert): alert is CobranzaAlert => alert !== null);
@@ -867,12 +1404,21 @@ export default function ControlCuotas() {
     const porVencer = normalized
       .filter(
         (alert) =>
-          alert.cuotasVencidas === 0 && alert.dias >= 1 && alert.dias <= 4,
+          alert.proximaFecha !== null &&
+          alert.cuotasVencidas === 0 &&
+          alert.moraPendiente <= 0 &&
+          alert.dias >= 1 &&
+          alert.dias <= 4,
       )
       .sort((a, b) => a.dias - b.dias || a.idContrato - b.idContrato);
 
     const vencidos = normalized
-      .filter((alert) => alert.cuotasVencidas > 0 || alert.dias < 0)
+      .filter(
+        (alert) =>
+          alert.cuotasVencidas > 0 ||
+          alert.moraPendiente > 0 ||
+          (alert.proximaFecha !== null && alert.dias < 0),
+      )
       .sort((a, b) => {
         const overdueDaysA = a.dias < 0 ? Math.abs(a.dias) : 0;
         const overdueDaysB = b.dias < 0 ? Math.abs(b.dias) : 0;
@@ -930,18 +1476,69 @@ export default function ControlCuotas() {
 
   const pendingChargesTotal = useMemo(() => {
     return detail.cargos.reduce((acc, cargo) => {
-      if (cargo.estado === "PAGADO" || cargo.estado === "ANULADO") {
+      if (
+        isMoratoryCharge(cargo) ||
+        cargo.estado === "PAGADO" ||
+        cargo.estado === "ANULADO"
+      ) {
         return acc;
       }
       return acc + Math.max((cargo.monto_original ?? 0) - (cargo.monto_pagado ?? 0), 0);
     }, 0);
   }, [detail.cargos]);
 
+  const moratorySummary = useMemo(() => {
+    const moratoryCharges = detail.cargos.filter(isMoratoryCharge);
+    const pending = moratoryCharges.reduce((acc, cargo) => {
+      if (cargo.estado === "ANULADO") return acc;
+      return (
+        acc +
+        Math.max(
+          (cargo.monto_original ?? 0) - (cargo.monto_pagado ?? 0),
+          0,
+        )
+      );
+    }, 0);
+    const generated = moratoryCharges.reduce(
+      (acc, cargo) =>
+        cargo.estado === "ANULADO" ? acc : acc + (cargo.monto_original ?? 0),
+      0,
+    );
+    const paid = moratoryCharges.reduce(
+      (acc, cargo) =>
+        cargo.estado === "ANULADO" ? acc : acc + (cargo.monto_pagado ?? 0),
+      0,
+    );
+    const latestCalculation =
+      detail.calculosMora.find((calculo) => calculo.estado !== "ANULADO") ??
+      null;
+
+    return {
+      pending,
+      generated,
+      paid,
+      latestCalculation,
+      nextCalculationDate:
+        selectedRow?.proxima_fecha_calculo_mora ?? null,
+      totalOverdueWithMora:
+        (selectedRow?.monto_vencido ?? 0) + pending,
+    };
+  }, [detail.calculosMora, detail.cargos, selectedRow]);
+
+  const hasOpenQuotaBalance = selectedQuotaSummary.totalPendiente > 0.009;
+  const hasPendingMora = moratorySummary.pending > 0.009;
+  const canRegisterFinancialMovement =
+    !detailLoading &&
+    detail.contractId === selectedRow?.id_contrato &&
+    selectedRow?.estado_contrato === "VIGENTE" &&
+    Boolean(selectedRow.id_plan_pago) &&
+    (hasOpenQuotaBalance || hasPendingMora);
+
   const refreshSelected = useCallback(async () => {
-    await loadResumen();
     if (selectedContractId) {
       await loadDetail(selectedContractId);
     }
+    await loadResumen();
   }, [loadDetail, loadResumen, selectedContractId]);
 
   const exportSelectedFinancialDetail = useCallback(async () => {
@@ -950,6 +1547,7 @@ export default function ControlCuotas() {
     const rowCountByTab: Record<FinancialDetailTab, number> = {
       cuotas: detail.cuotas.length,
       pagos: detail.pagos.length,
+      mora: detail.calculosMora.length,
       cargos: detail.cargos.length,
       historial: detail.eventos.length,
     };
@@ -1008,7 +1606,7 @@ export default function ControlCuotas() {
           },
           {
             id: "interes",
-            header: "Interes",
+            header: "Interes financiero",
             getValue: (row) => Number(row.monto_interes_programado ?? 0),
             formatValue: (value) => formatCurrency(Number(value ?? 0)),
             type: "currency",
@@ -1063,8 +1661,10 @@ export default function ControlCuotas() {
         } satisfies ReportPayload<ControlCuotasPlanRow>);
       } else if (selectedDetailTab === "pagos") {
         type PaymentExportRow = PagoRow & {
+          concepto: PaymentKind;
           totalInteres: number;
           totalCapital: number;
+          totalMora: number;
           totalOtros: number;
           aplicacionesTexto: string;
         };
@@ -1079,8 +1679,23 @@ export default function ControlCuotas() {
             (acc, app) => acc + (app.monto_capital ?? 0),
             0,
           );
+          const totalMora = aplicaciones.reduce((acc, app) => {
+            const cargo =
+              app.id_cargo !== null ? cargoById.get(app.id_cargo) : undefined;
+            return isMoratoryCharge(cargo)
+              ? acc + (app.monto_otros ?? 0)
+              : acc;
+          }, 0);
           const totalOtros = aplicaciones.reduce(
-            (acc, app) => acc + (app.monto_otros ?? 0),
+            (acc, app) => {
+              const cargo =
+                app.id_cargo !== null
+                  ? cargoById.get(app.id_cargo)
+                  : undefined;
+              return isMoratoryCharge(cargo)
+                ? acc
+                : acc + (app.monto_otros ?? 0);
+            },
             0,
           );
           const aplicacionesTexto =
@@ -1094,23 +1709,36 @@ export default function ControlCuotas() {
                   application.id_cargo !== null
                     ? cargoById.get(application.id_cargo)
                     : undefined;
+                const planId = getApplicationPlanId(application);
                 const label = cuota
                   ? `Cuota ${cuota.numero_cuota}`
                   : cargo
-                    ? cargo.descripcion || cargo.tipo_cargo
-                    : "Aplicacion";
-                return `${label}: Int. ${formatCurrency(
+                    ? cargo.descripcion || getChargeTypeLabel(cargo.tipo_cargo)
+                    : planId !== null
+                      ? `Plan de origen #${planId}`
+                      : "Aplicacion";
+                const appliedMora = isMoratoryCharge(cargo)
+                  ? application.monto_otros
+                  : 0;
+                const appliedOther = isMoratoryCharge(cargo)
+                  ? 0
+                  : application.monto_otros;
+                return `${label}: Int. financiero ${formatCurrency(
                   application.monto_interes,
                 )} | Cap. ${formatCurrency(
                   application.monto_capital,
-                )} | Otros ${formatCurrency(application.monto_otros)}`;
+                )} | Mora ${formatCurrency(appliedMora)} | Otros ${formatCurrency(
+                  appliedOther,
+                )}`;
               })
               .join(" | ") || "Sin detalle de aplicaciones";
 
           return {
             ...pago,
+            concepto: getPaymentKind(pago, aplicaciones, cargoById),
             totalInteres,
             totalCapital,
+            totalMora,
             totalOtros,
             aplicacionesTexto,
           };
@@ -1127,6 +1755,12 @@ export default function ControlCuotas() {
             id: "estado",
             header: "Estado",
             getValue: (row) => row.estado,
+            type: "text",
+          },
+          {
+            id: "concepto",
+            header: "Concepto",
+            getValue: (row) => row.concepto,
             type: "text",
           },
           {
@@ -1158,8 +1792,17 @@ export default function ControlCuotas() {
           },
           {
             id: "interes_aplicado",
-            header: "Interes aplicado",
+            header: "Interes financiero aplicado",
             getValue: (row) => row.totalInteres,
+            formatValue: (value) => formatCurrency(Number(value ?? 0)),
+            type: "currency",
+            align: "right",
+            total: "sum",
+          },
+          {
+            id: "mora_aplicada",
+            header: "Mora aplicada",
+            getValue: (row) => row.totalMora,
             formatValue: (value) => formatCurrency(Number(value ?? 0)),
             type: "currency",
             align: "right",
@@ -1214,12 +1857,133 @@ export default function ControlCuotas() {
           columns,
           rows: paymentRows,
         } satisfies ReportPayload<PaymentExportRow>);
+      } else if (selectedDetailTab === "mora") {
+        type MoraExportRow = MoratoryInterestCalculationRow & {
+          montoPagado: number;
+          montoPendiente: number;
+          estadoVisible: string;
+        };
+
+        const moraRows: MoraExportRow[] = detail.calculosMora.map((calculo) => {
+          const cargo =
+            calculo.id_cargo !== null
+              ? cargoById.get(calculo.id_cargo)
+              : undefined;
+          const montoPagado = cargo?.monto_pagado ?? 0;
+          const isAnnulled =
+            calculo.estado === "ANULADO" || cargo?.estado === "ANULADO";
+          return {
+            ...calculo,
+            montoPagado,
+            montoPendiente: isAnnulled
+              ? 0
+              : Math.max((cargo?.monto_original ?? 0) - montoPagado, 0),
+            estadoVisible:
+              isAnnulled ? "ANULADO" : cargo?.estado ?? calculo.estado,
+          };
+        });
+
+        const columns: ReportColumn<MoraExportRow>[] = [
+          {
+            id: "periodo",
+            header: "Periodo",
+            getValue: (row) => formatDate(row.periodo_mora),
+            type: "text",
+          },
+          {
+            id: "fecha_corte",
+            header: "Fecha de corte",
+            getValue: (row) => parseCalendarDate(row.fecha_corte),
+            formatValue: (_value, row) => formatDate(row.fecha_corte),
+            type: "date",
+          },
+          {
+            id: "base_cuotas",
+            header: "Cuotas vencidas",
+            getValue: (row) => Number(row.base_cuotas_vencidas ?? 0),
+            formatValue: (value) => formatCurrency(Number(value ?? 0)),
+            type: "currency",
+            align: "right",
+            total: "sum",
+          },
+          {
+            id: "base_mora_anterior",
+            header: "Mora anterior",
+            getValue: (row) => Number(row.base_mora_anterior ?? 0),
+            formatValue: (value) => formatCurrency(Number(value ?? 0)),
+            type: "currency",
+            align: "right",
+            total: "sum",
+          },
+          {
+            id: "base_total",
+            header: "Base total",
+            getValue: (row) => Number(row.base_total ?? 0),
+            formatValue: (value) => formatCurrency(Number(value ?? 0)),
+            type: "currency",
+            align: "right",
+          },
+          {
+            id: "tasa",
+            header: "Tasa mensual",
+            getValue: (row) => Number(row.tasa_mensual ?? 0),
+            formatValue: (value) =>
+              formatFractionAsPercent(Number(value ?? 0)),
+            type: "number",
+            align: "right",
+          },
+          {
+            id: "generado",
+            header: "Mora generada",
+            getValue: (row) => Number(row.monto_generado ?? 0),
+            formatValue: (value) => formatCurrency(Number(value ?? 0)),
+            type: "currency",
+            align: "right",
+            total: "sum",
+          },
+          {
+            id: "pagado",
+            header: "Pagado",
+            getValue: (row) => row.montoPagado,
+            formatValue: (value) => formatCurrency(Number(value ?? 0)),
+            type: "currency",
+            align: "right",
+            total: "sum",
+          },
+          {
+            id: "pendiente",
+            header: "Pendiente",
+            getValue: (row) => row.montoPendiente,
+            formatValue: (value) => formatCurrency(Number(value ?? 0)),
+            type: "currency",
+            align: "right",
+            total: "sum",
+          },
+          {
+            id: "estado",
+            header: "Estado",
+            getValue: (row) => row.estadoVisible,
+            type: "text",
+          },
+        ];
+
+        await exportExcelReport({
+          systemName: "Veredas Sarchi - Poas",
+          title: `Calculos moratorios - ${selectedRow.cliente_nombre || "Cliente"}`,
+          sheetName: "Mora",
+          fileBaseName: "Control_Cuotas_Mora",
+          generatedAt: new Date(),
+          generatedBy: user?.email ?? role ?? "No disponible",
+          filters: baseFilters,
+          columns,
+          rows: moraRows,
+        } satisfies ReportPayload<MoraExportRow>);
       } else if (selectedDetailTab === "cargos") {
         const columns: ReportColumn<CargoRow>[] = [
           {
             id: "tipo",
             header: "Tipo",
-            getValue: (row) => row.tipo_cargo,
+            getValue: (row) => getChargeTypeLabel(row.tipo_cargo),
             type: "text",
           },
           {
@@ -1359,6 +2123,7 @@ export default function ControlCuotas() {
   }, [
     cargoById,
     detail.cargos,
+    detail.calculosMora,
     detail.cuotas,
     detail.eventos,
     detail.pagos,
@@ -1385,8 +2150,11 @@ export default function ControlCuotas() {
     setBackfillOpen(true);
   }, [selectedRow]);
 
-  const openPaymentDialog = useCallback(() => {
+  const openPaymentDialog = useCallback((kind: PaymentKind) => {
+    setPaymentKind(kind);
     setPaymentForm(getInitialPaymentForm());
+    setExtraordinarySimulation(null);
+    setExtraordinarySimulationError(null);
     setPaymentOpen(true);
   }, []);
 
@@ -1454,14 +2222,59 @@ export default function ControlCuotas() {
       return;
     }
 
+    const saldoAplicable = paymentKind === "MORA"
+      ? moratorySummary.pending
+      : selectedQuotaSummary.totalPendiente;
+    if (
+      paymentKind !== "EXTRAORDINARIO" &&
+      montoTotal - saldoAplicable > 0.009
+    ) {
+      toast.error(
+        paymentKind === "MORA"
+          ? "El pago no puede superar la mora pendiente"
+          : "El pago no puede superar el saldo pendiente de las cuotas",
+      );
+      return;
+    }
+
     if (!paymentForm.fechaPago) {
       toast.error("Debes indicar la fecha del pago");
       return;
     }
 
+    if (paymentKind === "EXTRAORDINARIO") {
+      const expectedRequestKey = `${montoTotal}|${paymentForm.fechaPago}`;
+      if (
+        extraordinarySimulationLoading ||
+        extraordinarySimulation?.requestKey !== expectedRequestKey
+      ) {
+        toast.error("Espera a que finalice la vista previa del pago");
+        return;
+      }
+      if (!extraordinarySimulation.permitido) {
+        toast.error(
+          extraordinarySimulation.motivoBloqueo ||
+            "El contrato debe estar al dia en cuotas y mora.",
+        );
+        return;
+      }
+    }
+
     setSubmittingAction("payment");
     try {
-      const { error } = await supabase.rpc("registrar_pago_contrato", {
+      await synchronizeMoratoryInterest(
+        selectedRow.id_contrato,
+        paymentForm.fechaPago,
+        user?.email ?? role ?? "usuario",
+      );
+
+      const rpcName =
+        paymentKind === "MORA"
+          ? "registrar_pago_mora_contrato"
+          : paymentKind === "EXTRAORDINARIO"
+            ? "registrar_pago_extraordinario_contrato"
+            : "registrar_pago_contrato";
+      const { error } = await supabase.rpc(rpcName, {
         p_id_contrato: selectedRow.id_contrato,
         p_monto_total: montoTotal,
         p_fecha_pago: toPaymentTimestamp(paymentForm.fechaPago),
@@ -1470,25 +2283,50 @@ export default function ControlCuotas() {
         p_numero_factura: paymentForm.numeroFactura || null,
         p_observacion: paymentForm.observacion || null,
         p_usuario: user?.email ?? role ?? "usuario",
+        p_idempotency_key: paymentForm.idempotencyKey,
       });
 
       if (error) {
         throw error;
       }
 
-      toast.success("Pago registrado y aplicado correctamente");
+      toast.success(
+        paymentKind === "MORA"
+          ? "Pago de mora registrado y aplicado correctamente"
+          : paymentKind === "EXTRAORDINARIO"
+            ? "Pago extraordinario aplicado al capital correctamente"
+            : "Pago de cuota registrado y aplicado correctamente",
+      );
       setPaymentOpen(false);
       setPaymentForm(getInitialPaymentForm());
       await refreshSelected();
     } catch (error) {
-      console.error("Error registrando pago", error);
+      console.error(`Error registrando pago de ${paymentKind.toLowerCase()}`, error);
       toast.error(
-        getErrorMessage(error, "No se pudo registrar el pago del contrato"),
+        getErrorMessage(
+          error,
+          paymentKind === "MORA"
+            ? "No se pudo registrar el pago de mora"
+            : paymentKind === "EXTRAORDINARIO"
+              ? "No se pudo registrar el pago extraordinario"
+              : "No se pudo registrar el pago de cuota",
+        ),
       );
     } finally {
       setSubmittingAction(null);
     }
-  }, [paymentForm, refreshSelected, role, selectedRow, user]);
+  }, [
+    moratorySummary.pending,
+    extraordinarySimulation,
+    extraordinarySimulationLoading,
+    paymentForm,
+    paymentKind,
+    refreshSelected,
+    role,
+    selectedQuotaSummary.totalPendiente,
+    selectedRow,
+    user,
+  ]);
 
   const handleCreateArrangement = useCallback(async () => {
     if (!selectedRow?.id_contrato) return;
@@ -1567,8 +2405,8 @@ export default function ControlCuotas() {
                 Control de cuotas
               </h1>
               <p className="text-sm text-muted-foreground">
-                Resumen financiero por contrato, detalle de cuotas, pagos
-                aplicados y reestructuraciones.
+                Resumen por contrato, cuotas, pagos por concepto e interes
+                moratorio calculado por periodo.
               </p>
             </div>
           </div>
@@ -1592,7 +2430,7 @@ export default function ControlCuotas() {
           </div>
         </div>
 
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-7">
           <SummaryMetricCard
             title="Contratos filtrados"
             value={String(dashboardSummary.totalContratos)}
@@ -1609,13 +2447,23 @@ export default function ControlCuotas() {
             hint="Pendientes de backfill o generacion inicial."
           />
           <SummaryMetricCard
-            title="Con vencidas"
+            title="Con saldo vencido"
             value={String(dashboardSummary.conVencidas)}
-            hint="Contratos con atraso al dia de hoy."
+            hint="Contratos con cuotas vencidas o mora pendiente."
           />
           <SummaryMetricCard
-            title="Monto vencido"
+            title="Cuotas vencidas"
             value={formatCurrency(dashboardSummary.montoVencido)}
+            hint="Saldo vencido sin incluir mora."
+          />
+          <SummaryMetricCard
+            title="Mora pendiente"
+            value={formatCurrency(dashboardSummary.moraPendiente)}
+            hint="Interes moratorio generado aun no pagado."
+          />
+          <SummaryMetricCard
+            title="Total vencido con mora"
+            value={formatCurrency(dashboardSummary.totalVencidoConMora)}
             hint={`Saldo capital visible: ${formatCurrency(
               dashboardSummary.saldoCapital,
             )}`}
@@ -1722,8 +2570,11 @@ export default function ControlCuotas() {
                             </p>
                           </div>
                           <Badge className="bg-rose-100 text-rose-900 hover:bg-rose-100">
-                            {alert.cuotasVencidas} vencida
-                            {alert.cuotasVencidas === 1 ? "" : "s"}
+                            {alert.cuotasVencidas > 0
+                              ? `${alert.cuotasVencidas} vencida${
+                                  alert.cuotasVencidas === 1 ? "" : "s"
+                                }`
+                              : "Mora pendiente"}
                           </Badge>
                         </div>
                         <div className="mt-3 space-y-1 text-sm">
@@ -1731,7 +2582,15 @@ export default function ControlCuotas() {
                             Proxima cuota pendiente: {formatDate(alert.proximaFecha)}
                           </p>
                           <p className="text-muted-foreground">
-                            Monto vencido: {formatCurrency(alert.montoVencido)}
+                            Cuotas vencidas: {formatCurrency(alert.montoVencido)}
+                          </p>
+                          <p className="text-muted-foreground">
+                            Mora pendiente: {formatCurrency(alert.moraPendiente)}
+                          </p>
+                          <p className="font-medium text-rose-800">
+                            Total vencido: {formatCurrency(
+                              alert.totalVencidoConMora,
+                            )}
                           </p>
                           {alert.dias < 0 && (
                             <p className="text-rose-700">
@@ -1891,6 +2750,40 @@ export default function ControlCuotas() {
                               {formatCurrency(row.monto_vencido)}
                             </p>
                           </div>
+                          <div>
+                            <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                              Mora pendiente
+                            </p>
+                            <p
+                              className={cn(
+                                "font-medium",
+                                (row.mora_pendiente ?? 0) > 0
+                                  ? "text-rose-700"
+                                  : "text-foreground",
+                              )}
+                            >
+                              {formatCurrency(row.mora_pendiente)}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                              Total vencido con mora
+                            </p>
+                            <p
+                              className={cn(
+                                "font-medium",
+                                (row.total_vencido_con_mora ?? 0) > 0
+                                  ? "text-rose-700"
+                                  : "text-foreground",
+                              )}
+                            >
+                              {formatCurrency(
+                                row.total_vencido_con_mora ??
+                                  (row.monto_vencido ?? 0) +
+                                    (row.mora_pendiente ?? 0),
+                              )}
+                            </p>
+                          </div>
                         </div>
                       </button>
                     );
@@ -1945,16 +2838,36 @@ export default function ControlCuotas() {
                           Generar plan base
                         </Button>
                       )}
-                      {isAdmin && selectedRow.id_plan_pago && (
+                      {isAdmin && canRegisterFinancialMovement && (
                         <>
-                          <Button variant="outline" onClick={openPaymentDialog}>
-                            <DollarSign className="mr-2 h-4 w-4" />
-                            Registrar pago
+                          {hasOpenQuotaBalance && (
+                            <Button
+                              variant="outline"
+                              onClick={() => openPaymentDialog("CUOTA")}
+                            >
+                              <DollarSign className="mr-2 h-4 w-4" />
+                              Registrar pago
+                            </Button>
+                          )}
+                          <Button
+                            variant="outline"
+                            onClick={() => openPaymentDialog("MORA")}
+                            disabled={!hasPendingMora}
+                            title={
+                              !hasPendingMora
+                                ? "El contrato no tiene mora pendiente"
+                                : undefined
+                            }
+                          >
+                            <CreditCard className="mr-2 h-4 w-4" />
+                            Registrar pago de mora
                           </Button>
-                          <Button variant="outline" onClick={openArrangementDialog}>
-                            <Calendar className="mr-2 h-4 w-4" />
-                            Arreglo de pago
-                          </Button>
+                          {hasOpenQuotaBalance && (
+                            <Button variant="outline" onClick={openArrangementDialog}>
+                              <Calendar className="mr-2 h-4 w-4" />
+                              Arreglo de pago
+                            </Button>
+                          )}
                         </>
                       )}
                     </div>
@@ -1974,13 +2887,13 @@ export default function ControlCuotas() {
                       </div>
                       <div className="rounded-xl border border-border/70 bg-muted/20 p-4">
                         <p className="text-xs uppercase tracking-wide text-muted-foreground">
-                          Interes pendiente
+                          Interes financiero pendiente
                         </p>
                         <p className="mt-1 text-xl font-semibold text-foreground">
                           {formatCurrency(selectedQuotaSummary.interesPendiente)}
                         </p>
                         <p className="mt-1 text-xs text-muted-foreground">
-                          Interes restante dentro de las cuotas pendientes.
+                          Interes ordinario restante dentro de las cuotas.
                         </p>
                       </div>
                       <div className="rounded-xl border border-border/70 bg-muted/20 p-4">
@@ -2003,6 +2916,42 @@ export default function ControlCuotas() {
                         </p>
                         <p className="mt-1 text-xs text-muted-foreground">
                           Solo cuotas ya vencidas al dia de hoy.
+                        </p>
+                      </div>
+                      <div className="rounded-xl border border-rose-200 bg-rose-50/70 p-4">
+                        <p className="text-xs uppercase tracking-wide text-rose-700">
+                          Mora pendiente
+                        </p>
+                        <p className="mt-1 text-xl font-semibold text-rose-800">
+                          {formatCurrency(moratorySummary.pending)}
+                        </p>
+                        <p className="mt-1 text-xs text-rose-700/80">
+                          Generada {formatCurrency(moratorySummary.generated)} ·
+                          pagada {formatCurrency(moratorySummary.paid)}.
+                        </p>
+                      </div>
+                      <div className="rounded-xl border border-rose-200 bg-rose-50/70 p-4">
+                        <p className="text-xs uppercase tracking-wide text-rose-700">
+                          Total vencido con mora
+                        </p>
+                        <p className="mt-1 text-xl font-semibold text-rose-800">
+                          {formatCurrency(
+                            moratorySummary.totalOverdueWithMora,
+                          )}
+                        </p>
+                        <p className="mt-1 text-xs text-rose-700/80">
+                          Cuotas vencidas + interes moratorio pendiente.
+                        </p>
+                      </div>
+                      <div className="rounded-xl border border-border/70 bg-muted/20 p-4">
+                        <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                          Proximo corte de mora
+                        </p>
+                        <p className="mt-1 text-xl font-semibold text-foreground">
+                          {formatDate(moratorySummary.nextCalculationDate)}
+                        </p>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          La mora se calcula al 2 % mensual tras 6 dias de gracia.
                         </p>
                       </div>
                       <div className="rounded-xl border border-border/70 bg-muted/20 p-4">
@@ -2100,9 +3049,11 @@ export default function ControlCuotas() {
                           ? detail.cuotas.length === 0
                           : selectedDetailTab === "pagos"
                             ? detail.pagos.length === 0
-                            : selectedDetailTab === "cargos"
-                              ? detail.cargos.length === 0
-                              : detail.eventos.length === 0)
+                            : selectedDetailTab === "mora"
+                              ? detail.calculosMora.length === 0
+                              : selectedDetailTab === "cargos"
+                                ? detail.cargos.length === 0
+                                : detail.eventos.length === 0)
                       }
                     >
                       {exportingExcel ? (
@@ -2136,9 +3087,10 @@ export default function ControlCuotas() {
                         }
                         className="w-full"
                       >
-                        <TabsList className="grid h-auto w-full grid-cols-2 gap-1 sm:grid-cols-4">
+                        <TabsList className="grid h-auto w-full grid-cols-2 gap-1 sm:grid-cols-5">
                           <TabsTrigger value="cuotas">Cuotas</TabsTrigger>
                           <TabsTrigger value="pagos">Pagos</TabsTrigger>
+                          <TabsTrigger value="mora">Mora</TabsTrigger>
                           <TabsTrigger value="cargos">Cargos</TabsTrigger>
                           <TabsTrigger value="historial">Historial</TabsTrigger>
                         </TabsList>
@@ -2157,7 +3109,7 @@ export default function ControlCuotas() {
                                   <TableHead>Vencimiento</TableHead>
                                   <TableHead>Estado</TableHead>
                                   <TableHead>Cuota</TableHead>
-                                  <TableHead>Interes</TableHead>
+                                  <TableHead>Interes financiero</TableHead>
                                   <TableHead>Capital</TableHead>
                                   <TableHead>Pagado</TableHead>
                                   <TableHead>Saldo final</TableHead>
@@ -2221,7 +3173,7 @@ export default function ControlCuotas() {
                           {detail.pagos.length === 0 ? (
                             <EmptyPanel
                               title="No hay pagos registrados"
-                              description="Usa el boton de registrar pago para empezar el control operativo."
+                              description="Registra una cuota, un pago extraordinario al capital o un pago de mora segun el concepto recibido."
                             />
                           ) : (
                             <div className="space-y-4">
@@ -2236,9 +3188,34 @@ export default function ControlCuotas() {
                                   (acc, app) => acc + (app.monto_capital ?? 0),
                                   0,
                                 );
-                                const totalOtros = aplicaciones.reduce(
-                                  (acc, app) => acc + (app.monto_otros ?? 0),
+                                const totalMora = aplicaciones.reduce(
+                                  (acc, app) => {
+                                    const cargo =
+                                      app.id_cargo !== null
+                                        ? cargoById.get(app.id_cargo)
+                                        : undefined;
+                                    return isMoratoryCharge(cargo)
+                                      ? acc + (app.monto_otros ?? 0)
+                                      : acc;
+                                  },
                                   0,
+                                );
+                                const totalOtros = aplicaciones.reduce(
+                                  (acc, app) => {
+                                    const cargo =
+                                      app.id_cargo !== null
+                                        ? cargoById.get(app.id_cargo)
+                                        : undefined;
+                                    return isMoratoryCharge(cargo)
+                                      ? acc
+                                      : acc + (app.monto_otros ?? 0);
+                                  },
+                                  0,
+                                );
+                                const paymentConcept = getPaymentKind(
+                                  pago,
+                                  aplicaciones,
+                                  cargoById,
                                 );
 
                                 return (
@@ -2258,6 +3235,18 @@ export default function ControlCuotas() {
                                             )}
                                           >
                                             {pago.estado}
+                                          </Badge>
+                                          <Badge
+                                            className={
+                                              paymentConcept === "MORA"
+                                                ? "bg-rose-100 text-rose-800 hover:bg-rose-100"
+                                                : paymentConcept ===
+                                                    "EXTRAORDINARIO"
+                                                  ? "bg-emerald-100 text-emerald-800 hover:bg-emerald-100"
+                                                  : "bg-sky-100 text-sky-800 hover:bg-sky-100"
+                                            }
+                                          >
+                                            {paymentConcept}
                                           </Badge>
                                         </div>
                                         <p className="mt-1 text-sm text-muted-foreground">
@@ -2280,13 +3269,21 @@ export default function ControlCuotas() {
                                       </div>
                                     </div>
 
-                                    <div className="mt-4 grid gap-3 md:grid-cols-3">
+                                    <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
                                       <div className="rounded-lg border border-border/70 bg-muted/20 px-3 py-2">
                                         <p className="text-xs uppercase tracking-wide text-muted-foreground">
-                                          Interes aplicado
+                                          Interes financiero aplicado
                                         </p>
                                         <p className="font-medium text-foreground">
                                           {formatCurrency(totalInteres)}
+                                        </p>
+                                      </div>
+                                      <div className="rounded-lg border border-rose-200 bg-rose-50/60 px-3 py-2">
+                                        <p className="text-xs uppercase tracking-wide text-rose-700">
+                                          Mora aplicada
+                                        </p>
+                                        <p className="font-medium text-rose-800">
+                                          {formatCurrency(totalMora)}
                                         </p>
                                       </div>
                                       <div className="rounded-lg border border-border/70 bg-muted/20 px-3 py-2">
@@ -2337,18 +3334,32 @@ export default function ControlCuotas() {
                                               application.id_cargo !== null
                                                 ? cargoById.get(application.id_cargo)
                                                 : undefined;
+                                            const planId =
+                                              getApplicationPlanId(application);
                                             const label = cuota
                                               ? `Cuota ${cuota.numero_cuota}`
                                               : cargo
                                                 ? cargo.descripcion ||
-                                                  cargo.tipo_cargo
-                                                : "Aplicacion";
+                                                  getChargeTypeLabel(
+                                                    cargo.tipo_cargo,
+                                                  )
+                                                : planId !== null
+                                                  ? `Plan de origen #${planId}`
+                                                  : "Aplicacion";
+                                            const appliedMora =
+                                              isMoratoryCharge(cargo)
+                                                ? application.monto_otros
+                                                : 0;
+                                            const appliedOther =
+                                              isMoratoryCharge(cargo)
+                                                ? 0
+                                                : application.monto_otros;
                                             return (
                                               <div
                                                 key={application.id_aplicacion}
                                                 className="rounded-full border border-primary/20 bg-primary/5 px-3 py-1 text-xs text-primary"
                                               >
-                                                {label}: Int.{" "}
+                                                {label}: Int. financiero{" "}
                                                 {formatCurrency(
                                                   application.monto_interes,
                                                 )}{" "}
@@ -2356,9 +3367,11 @@ export default function ControlCuotas() {
                                                 {formatCurrency(
                                                   application.monto_capital,
                                                 )}{" "}
+                                                | Mora{" "}
+                                                {formatCurrency(appliedMora)}{" "}
                                                 | Otros{" "}
                                                 {formatCurrency(
-                                                  application.monto_otros,
+                                                  appliedOther,
                                                 )}
                                               </div>
                                             );
@@ -2373,11 +3386,119 @@ export default function ControlCuotas() {
                           )}
                         </TabsContent>
 
+                        <TabsContent value="mora">
+                          <div className="mb-4 rounded-xl border border-rose-200 bg-rose-50/60 p-4 text-sm text-rose-900">
+                            <p className="font-medium">Calculo moratorio separado</p>
+                            <p className="mt-1 text-rose-800/80">
+                              Se aplica un 2 % mensual desde el sexto dia de
+                              atraso sobre las cuotas vencidas y la mora anterior
+                              que continuen pendientes al corte.
+                            </p>
+                          </div>
+                          {detail.calculosMora.length === 0 ? (
+                            <EmptyPanel
+                              title="No hay calculos moratorios"
+                              description="El contrato no ha alcanzado un corte con saldo vencido sujeto a mora."
+                            />
+                          ) : (
+                            <div className="overflow-x-auto">
+                              <Table>
+                                <TableHeader>
+                                  <TableRow>
+                                    <TableHead>Periodo</TableHead>
+                                    <TableHead>Corte</TableHead>
+                                    <TableHead>Cuotas vencidas</TableHead>
+                                    <TableHead>Mora anterior</TableHead>
+                                    <TableHead>Base total</TableHead>
+                                    <TableHead>Tasa</TableHead>
+                                    <TableHead>Generado</TableHead>
+                                    <TableHead>Pagado</TableHead>
+                                    <TableHead>Pendiente</TableHead>
+                                    <TableHead>Estado</TableHead>
+                                  </TableRow>
+                                </TableHeader>
+                                <TableBody>
+                                  {detail.calculosMora.map((calculo) => {
+                                    const cargo =
+                                      calculo.id_cargo !== null
+                                        ? cargoById.get(calculo.id_cargo)
+                                        : undefined;
+                                    const montoPagado = cargo?.monto_pagado ?? 0;
+                                    const isAnnulled =
+                                      calculo.estado === "ANULADO" ||
+                                      cargo?.estado === "ANULADO";
+                                    const pendiente =
+                                      isAnnulled
+                                        ? 0
+                                        : Math.max(
+                                            (cargo?.monto_original ?? 0) -
+                                              montoPagado,
+                                            0,
+                                          );
+                                    const estado =
+                                      isAnnulled
+                                        ? "ANULADO"
+                                        : cargo?.estado ?? calculo.estado;
+
+                                    return (
+                                      <TableRow key={calculo.id_calculo_mora}>
+                                        <TableCell className="font-medium">
+                                          {formatDate(calculo.periodo_mora)}
+                                        </TableCell>
+                                        <TableCell>
+                                          <div>{formatDate(calculo.fecha_corte)}</div>
+                                          <div className="text-xs text-muted-foreground">
+                                            {calculo.dias_gracia} dias de gracia
+                                          </div>
+                                        </TableCell>
+                                        <TableCell>
+                                          {formatCurrency(
+                                            calculo.base_cuotas_vencidas,
+                                          )}
+                                        </TableCell>
+                                        <TableCell>
+                                          {formatCurrency(
+                                            calculo.base_mora_anterior,
+                                          )}
+                                        </TableCell>
+                                        <TableCell className="font-medium">
+                                          {formatCurrency(calculo.base_total)}
+                                        </TableCell>
+                                        <TableCell>
+                                          {formatFractionAsPercent(
+                                            calculo.tasa_mensual,
+                                          )}
+                                        </TableCell>
+                                        <TableCell>
+                                          {formatCurrency(calculo.monto_generado)}
+                                        </TableCell>
+                                        <TableCell>
+                                          {formatCurrency(montoPagado)}
+                                        </TableCell>
+                                        <TableCell>
+                                          {formatCurrency(pendiente)}
+                                        </TableCell>
+                                        <TableCell>
+                                          <Badge
+                                            className={getStatusBadgeClass(estado)}
+                                          >
+                                            {estado}
+                                          </Badge>
+                                        </TableCell>
+                                      </TableRow>
+                                    );
+                                  })}
+                                </TableBody>
+                              </Table>
+                            </div>
+                          )}
+                        </TabsContent>
+
                         <TabsContent value="cargos">
                           {detail.cargos.length === 0 ? (
                             <EmptyPanel
                               title="No hay cargos adicionales"
-                              description="Aqui apareceran mantenimiento, apertura u otros cargos operativos."
+                              description="Aqui apareceran intereses moratorios y otros cargos operativos."
                             />
                           ) : (
                             <Table>
@@ -2400,9 +3521,21 @@ export default function ControlCuotas() {
                                     0,
                                   );
                                   return (
-                                    <TableRow key={cargo.id_cargo}>
-                                      <TableCell className="font-medium">
-                                        {cargo.tipo_cargo}
+                                    <TableRow
+                                      key={cargo.id_cargo}
+                                      className={cn(
+                                        isMoratoryCharge(cargo) &&
+                                          "bg-rose-50/40",
+                                      )}
+                                    >
+                                      <TableCell
+                                        className={cn(
+                                          "font-medium",
+                                          isMoratoryCharge(cargo) &&
+                                            "text-rose-800",
+                                        )}
+                                      >
+                                        {getChargeTypeLabel(cargo.tipo_cargo)}
                                       </TableCell>
                                       <TableCell>
                                         {cargo.descripcion || "-"}
@@ -2440,7 +3573,7 @@ export default function ControlCuotas() {
                           {detail.eventos.length === 0 ? (
                             <EmptyPanel
                               title="No hay eventos financieros"
-                              description="El historial mostrara formalizaciones, pagos, backfills y arreglos de pago."
+                              description="El historial mostrara formalizaciones, cuotas, pagos extraordinarios, mora y arreglos de pago."
                             />
                           ) : (
                             <div className="space-y-4">
@@ -2562,29 +3695,110 @@ export default function ControlCuotas() {
       </Dialog>
 
       <Dialog open={paymentOpen} onOpenChange={setPaymentOpen}>
-        <DialogContent className="sm:max-w-xl">
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
           <DialogHeader>
-            <DialogTitle>Registrar pago</DialogTitle>
+            <DialogTitle>
+              {paymentKind === "MORA"
+                ? "Registrar pago de mora"
+                : "Registrar pago"}
+            </DialogTitle>
             <DialogDescription>
-              El sistema aplicará el pago automaticamente a cuotas y cargos
-              pendientes en orden cronologico.
+              {paymentKind === "MORA"
+                ? "Este ingreso se aplicara exclusivamente a cargos de interes moratorio pendientes."
+                : paymentKind === "EXTRAORDINARIO"
+                  ? "El pago extraordinario se aplica completamente al capital y reduce el plazo restante."
+                  : "Selecciona si deseas registrar una cuota normal o un pago extraordinario al capital."}
             </DialogDescription>
           </DialogHeader>
+          {paymentKind !== "MORA" && (
+            <div className="space-y-2">
+              <Label htmlFor="pago-concepto">Tipo de pago</Label>
+              <Select
+                value={paymentKind}
+                onValueChange={(value) => {
+                  setPaymentKind(value as RegularPaymentKind);
+                  setPaymentForm(getInitialPaymentForm());
+                  setExtraordinarySimulation(null);
+                  setExtraordinarySimulationError(null);
+                }}
+                disabled={submittingAction === "payment"}
+              >
+                <SelectTrigger id="pago-concepto">
+                  <SelectValue placeholder="Selecciona el tipo de pago" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="CUOTA">Pago de cuota</SelectItem>
+                  <SelectItem value="EXTRAORDINARIO">
+                    Pago extraordinario
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Cada registro corresponde a un solo concepto; no se combinan
+                cuota y extraordinario en una misma operacion.
+              </p>
+            </div>
+          )}
+          <div
+            className={cn(
+              "rounded-lg border px-4 py-3 text-sm",
+              paymentKind === "MORA"
+                ? "border-rose-200 bg-rose-50 text-rose-900"
+                : paymentKind === "EXTRAORDINARIO"
+                  ? "border-emerald-200 bg-emerald-50 text-emerald-900"
+                  : "border-sky-200 bg-sky-50 text-sky-900",
+            )}
+          >
+            <p className="text-xs uppercase tracking-wide opacity-80">
+              {paymentKind === "EXTRAORDINARIO"
+                ? "Saldo de capital actual"
+                : "Saldo disponible para este concepto"}
+            </p>
+            <p className="mt-1 text-lg font-semibold">
+              {formatCurrency(
+                paymentKind === "MORA"
+                  ? moratorySummary.pending
+                  : paymentKind === "EXTRAORDINARIO"
+                    ? selectedRow?.saldo_capital_pendiente
+                    : selectedQuotaSummary.totalPendiente,
+              )}
+            </p>
+            <p className="mt-1 text-xs opacity-80">
+              {paymentKind === "EXTRAORDINARIO"
+                ? "Solo puede registrarse si el contrato esta al dia en cuota y mora."
+                : "No se trasladara ningun remanente entre conceptos."}
+            </p>
+          </div>
           <div className="grid gap-4 md:grid-cols-2">
             <div className="space-y-2">
-              <Label htmlFor="pago-monto">Monto total</Label>
+              <Label htmlFor="pago-monto">
+                {paymentKind === "MORA"
+                  ? "Monto de mora"
+                  : paymentKind === "EXTRAORDINARIO"
+                    ? "Monto extraordinario"
+                    : "Monto de cuota"}
+              </Label>
               <Input
                 id="pago-monto"
                 type="number"
                 min="0"
+                max={
+                  paymentKind === "MORA"
+                    ? moratorySummary.pending
+                    : paymentKind === "EXTRAORDINARIO"
+                      ? selectedRow?.saldo_capital_pendiente ?? undefined
+                      : selectedQuotaSummary.totalPendiente
+                }
                 step="0.01"
                 value={paymentForm.montoTotal}
-                onChange={(event) =>
+                onChange={(event) => {
+                  setExtraordinarySimulation(null);
+                  setExtraordinarySimulationError(null);
                   setPaymentForm((current) => ({
                     ...current,
                     montoTotal: event.target.value,
-                  }))
-                }
+                  }));
+                }}
                 disabled={submittingAction === "payment"}
               />
             </div>
@@ -2594,29 +3808,183 @@ export default function ControlCuotas() {
                 id="pago-fecha"
                 type="date"
                 value={paymentForm.fechaPago}
-                onChange={(event) =>
+                onChange={(event) => {
+                  setExtraordinarySimulation(null);
+                  setExtraordinarySimulationError(null);
                   setPaymentForm((current) => ({
                     ...current,
                     fechaPago: event.target.value,
-                  }))
-                }
+                  }));
+                }}
                 disabled={submittingAction === "payment"}
               />
             </div>
+            {paymentKind === "EXTRAORDINARIO" && (
+              <div className="space-y-3 md:col-span-2">
+                {extraordinarySimulationLoading ? (
+                  <div className="flex items-center justify-center rounded-lg border border-border/70 bg-muted/20 px-4 py-8 text-sm text-muted-foreground">
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Calculando el nuevo saldo, plazo e intereses...
+                  </div>
+                ) : extraordinarySimulationError ? (
+                  <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-900">
+                    <div className="flex items-start gap-2">
+                      <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                      <div>
+                        <p className="font-semibold">
+                          No se pudo generar la vista previa
+                        </p>
+                        <p className="mt-1">{extraordinarySimulationError}</p>
+                      </div>
+                    </div>
+                  </div>
+                ) : extraordinarySimulation &&
+                  !extraordinarySimulation.permitido ? (
+                  <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+                    <div className="flex items-start gap-2">
+                      <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                      <div>
+                        <p className="font-semibold">
+                          Pago extraordinario no disponible
+                        </p>
+                        <p className="mt-1">
+                          {extraordinarySimulation.motivoBloqueo ||
+                            "Primero debe cancelar cualquier cuota vencida o mora pendiente."}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                ) : extraordinarySimulation?.permitido ? (
+                  <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 p-4">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                      <div className="flex items-center gap-2">
+                        <TrendingDown className="h-5 w-5 text-emerald-700" />
+                        <div>
+                          <p className="font-semibold text-emerald-950">
+                            Vista previa del nuevo plan
+                          </p>
+                          <p className="text-xs text-emerald-800">
+                            Pago al capital de {formatCurrency(
+                              extraordinarySimulation.montoExtraordinario,
+                            )}
+                          </p>
+                        </div>
+                      </div>
+                      {extraordinarySimulation.liquidacionTotal && (
+                        <Badge className="bg-emerald-700 text-white hover:bg-emerald-700">
+                          Liquida el capital
+                        </Badge>
+                      )}
+                    </div>
+
+                    <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                      <div className="rounded-lg border border-emerald-200 bg-white/80 p-3">
+                        <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                          Saldo de capital
+                        </p>
+                        <p className="mt-2 text-sm text-muted-foreground line-through">
+                          {formatCurrency(
+                            extraordinarySimulation.saldoCapitalAntes,
+                          )}
+                        </p>
+                        <p className="text-lg font-semibold text-emerald-800">
+                          {formatCurrency(
+                            extraordinarySimulation.saldoCapitalDespues,
+                          )}
+                        </p>
+                      </div>
+                      <div className="rounded-lg border border-emerald-200 bg-white/80 p-3">
+                        <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                          Cuotas restantes
+                        </p>
+                        <p className="mt-2 text-sm text-muted-foreground line-through">
+                          {extraordinarySimulation.cuotasRestantesAntes}
+                        </p>
+                        <p className="text-lg font-semibold text-emerald-800">
+                          {extraordinarySimulation.cuotasRestantesDespues}
+                        </p>
+                      </div>
+                      <div className="rounded-lg border border-emerald-200 bg-white/80 p-3">
+                        <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                          Intereses futuros
+                        </p>
+                        <p className="mt-2 text-sm text-muted-foreground line-through">
+                          {formatCurrency(
+                            extraordinarySimulation.interesFuturoAntes,
+                          )}
+                        </p>
+                        <p className="text-lg font-semibold text-emerald-800">
+                          {formatCurrency(
+                            extraordinarySimulation.interesFuturoDespues,
+                          )}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                      <div className="rounded-lg bg-emerald-700 px-4 py-3 text-white">
+                        <p className="text-xs uppercase tracking-wide text-emerald-100">
+                          Ahorro estimado de intereses
+                        </p>
+                        <p className="mt-1 text-xl font-semibold">
+                          {formatCurrency(
+                            extraordinarySimulation.ahorroIntereses,
+                          )}
+                        </p>
+                      </div>
+                      <div className="rounded-lg border border-emerald-200 bg-white/80 px-4 py-3 text-sm text-emerald-950">
+                        <p>
+                          La cuota mensual se mantiene en{" "}
+                          <strong>
+                            {formatCurrency(extraordinarySimulation.cuotaBase)}
+                          </strong>
+                          .
+                        </p>
+                        {(extraordinarySimulation.fechaFinAntes ||
+                          extraordinarySimulation.fechaFinDespues) && (
+                          <p className="mt-1 text-xs text-emerald-800">
+                            Finalizacion: {formatDate(
+                              extraordinarySimulation.fechaFinAntes,
+                            )}{" "}
+                            → {formatDate(
+                              extraordinarySimulation.fechaFinDespues,
+                            )}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="rounded-lg border border-dashed border-border px-4 py-5 text-center text-sm text-muted-foreground">
+                    Ingresa el monto para consultar en el servidor el efecto
+                    sobre capital, cuotas e intereses.
+                  </div>
+                )}
+              </div>
+            )}
             <div className="space-y-2">
               <Label htmlFor="pago-metodo">Metodo de pago</Label>
-              <Input
-                id="pago-metodo"
+              <Select
                 value={paymentForm.metodoPago}
-                onChange={(event) =>
+                onValueChange={(value) =>
                   setPaymentForm((current) => ({
                     ...current,
-                    metodoPago: event.target.value,
+                    metodoPago: value,
                   }))
                 }
-                placeholder="Transferencia, efectivo, deposito"
                 disabled={submittingAction === "payment"}
-              />
+              >
+                <SelectTrigger id="pago-metodo">
+                  <SelectValue placeholder="Seleccione un método" />
+                </SelectTrigger>
+                <SelectContent>
+                  {PAYMENT_METHOD_OPTIONS.map((method) => (
+                    <SelectItem key={method.value} value={method.value}>
+                      {method.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="space-y-2">
               <Label htmlFor="pago-factura">Numero de factura</Label>
@@ -2672,12 +4040,24 @@ export default function ControlCuotas() {
             </Button>
             <Button
               onClick={() => void handleRegisterPayment()}
-              disabled={submittingAction === "payment"}
+              disabled={
+                submittingAction === "payment" ||
+                (paymentKind === "EXTRAORDINARIO"
+                  ? extraordinarySimulationLoading ||
+                    !extraordinarySimulation?.permitido
+                  : (paymentKind === "MORA"
+                      ? moratorySummary.pending
+                      : selectedQuotaSummary.totalPendiente) <= 0.009)
+              }
             >
               {submittingAction === "payment" && (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               )}
-              Registrar pago
+              {paymentKind === "MORA"
+                ? "Registrar pago de mora"
+                : paymentKind === "EXTRAORDINARIO"
+                  ? "Confirmar pago extraordinario"
+                  : "Registrar pago de cuota"}
             </Button>
           </div>
         </DialogContent>

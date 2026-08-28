@@ -7,12 +7,11 @@ import {
 } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import type { User } from "@supabase/supabase-js";
-
-type Role = "admin" | "vendedor" | null;
+import { getUserAppRole, type AppRole } from "@/auth/roles";
 
 type AuthContextType = {
   user: User | null;
-  role: Role;
+  role: AppRole | null;
   loading: boolean;
 };
 
@@ -24,7 +23,7 @@ const AuthContext = createContext<AuthContextType>({
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
-  const [role, setRole] = useState<Role>(null);
+  const [role, setRole] = useState<AppRole | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -37,16 +36,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      const currentUser = data.session?.user ?? null;
+      if (!data.session) {
+        setUser(null);
+        setRole(null);
+        setLoading(false);
+        return;
+      }
+
+      // getSession lee el cache local. getUser valida la sesion contra Auth y
+      // obtiene app_metadata actual, importante cuando otro admin cambio el rol.
+      const { data: userData, error: userError } = await supabase.auth.getUser();
+      if (userError) {
+        console.error("Error validating current user", userError);
+        setUser(null);
+        setRole(null);
+        setLoading(false);
+        return;
+      }
+
+      const currentUser = userData.user;
       setUser(currentUser);
 
-      const rawRole =
-        (currentUser?.app_metadata as any)?.role ??
-        (currentUser?.user_metadata as any)?.role ??
-        null;
-
-      const userRole = (rawRole as Role) || null;
-      setRole(userRole);
+      setRole(getUserAppRole(currentUser));
 
       setLoading(false);
     }
@@ -58,13 +69,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const currentUser = session?.user ?? null;
         setUser(currentUser);
 
-        const rawRole =
-          (currentUser?.app_metadata as any)?.role ??
-          (currentUser?.user_metadata as any)?.role ??
-          null;
-
-        const userRole = (rawRole as Role) || null;
-        setRole(userRole);
+        setRole(getUserAppRole(currentUser));
       }
     );
 

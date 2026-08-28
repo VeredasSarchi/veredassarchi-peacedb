@@ -101,15 +101,27 @@ type IngresosResumen = {
   total_recaudado_historico: number;
   total_recaudado_contratos_periodo: number;
   mantenimiento_recaudado_periodo: number;
+  mantenimiento_principal_cobrado_periodo: number;
+  mora_mantenimiento_cobrada_periodo: number;
   capital_cobrado_periodo: number;
   interes_cobrado_periodo: number;
+  mora_cobrada_periodo: number;
   otros_cobrados_periodo: number;
   saldo_pendiente_total: number;
   capital_pendiente: number;
   interes_pendiente: number;
+  mora_pendiente: number;
   otros_pendientes: number;
   mantenimiento_pendiente: number;
+  mora_mantenimiento_pendiente: number;
+  total_mantenimiento_pendiente: number;
+  total_mantenimiento_vencido_con_mora: number;
+  mora_mantenimiento_generada_historica: number;
+  mora_mantenimiento_cobrada_historica: number;
   monto_vencido_total: number;
+  total_vencido_con_mora: number;
+  mora_generada_historica: number;
+  mora_cobrada_historica: number;
   total_pagos_periodo: number;
   promedio_ingreso_por_contrato: number;
   ingreso_mes_actual: number;
@@ -134,15 +146,27 @@ type IngresosDetalleRow = {
   total_pagado_historico: number | null;
   total_pagado_contrato_periodo: number | null;
   mantenimiento_cobrado_periodo: number | null;
+  mantenimiento_principal_cobrado_periodo: number | null;
+  mora_mantenimiento_cobrada_periodo: number | null;
   capital_cobrado_periodo: number | null;
   interes_cobrado_periodo: number | null;
+  mora_cobrada_periodo: number | null;
   otros_cobrados_periodo: number | null;
   saldo_pendiente_total: number | null;
   capital_pendiente: number | null;
   interes_pendiente: number | null;
+  mora_pendiente: number | null;
   otros_pendientes: number | null;
   mantenimiento_pendiente: number | null;
+  mora_mantenimiento_pendiente: number | null;
+  total_mantenimiento_pendiente: number | null;
+  total_mantenimiento_vencido_con_mora: number | null;
+  mora_mantenimiento_generada_historica: number | null;
+  mora_mantenimiento_cobrada_historica: number | null;
   monto_vencido_total: number | null;
+  total_vencido_con_mora: number | null;
+  mora_generada_historica: number | null;
+  mora_cobrada_historica: number | null;
   cuotas_totales: number | null;
   cuotas_pagadas: number | null;
   cuotas_pendientes: number | null;
@@ -160,9 +184,12 @@ type SerieMensualRow = {
   periodo: string;
   ingreso_contratos: number | null;
   ingreso_mantenimiento: number | null;
+  mantenimiento_principal_cobrado: number | null;
+  mora_mantenimiento_cobrada: number | null;
   ingreso_total: number | null;
   capital_cobrado: number | null;
   interes_cobrado: number | null;
+  mora_cobrada: number | null;
   otros_cobrados: number | null;
   pagos_registrados: number | null;
 };
@@ -206,11 +233,29 @@ const REPORT_COLUMN_WIDTHS: Record<string, string> = {
   tipo: "min-w-[140px]",
   monto_contratado: "min-w-[140px]",
   contrato_cobrado_periodo: "min-w-[160px]",
+  capital_cobrado_periodo: "min-w-[155px]",
+  interes_cobrado_periodo: "min-w-[175px]",
+  mora_cobrada_periodo: "min-w-[155px]",
+  otros_cobrados_periodo: "min-w-[150px]",
   mantenimiento_cobrado_periodo: "min-w-[180px]",
+  mantenimiento_principal_cobrado_periodo: "min-w-[190px]",
+  mora_mantenimiento_cobrada_periodo: "min-w-[190px]",
   historico_contrato: "min-w-[170px]",
+  mora_generada_historica: "min-w-[175px]",
+  mora_cobrada_historica: "min-w-[170px]",
+  mora_mantenimiento_generada_historica: "min-w-[220px]",
+  mora_mantenimiento_cobrada_historica: "min-w-[215px]",
   saldo_pendiente: "min-w-[170px]",
+  capital_pendiente: "min-w-[160px]",
+  interes_pendiente: "min-w-[180px]",
+  mora_pendiente: "min-w-[155px]",
+  otros_pendientes: "min-w-[155px]",
   mantenimiento_pendiente: "min-w-[190px]",
+  mora_mantenimiento_pendiente: "min-w-[190px]",
+  total_mantenimiento_pendiente: "min-w-[205px]",
+  total_mantenimiento_vencido_con_mora: "min-w-[225px]",
   monto_vencido: "min-w-[160px]",
+  total_vencido_con_mora: "min-w-[190px]",
   proximo_pago: "min-w-[120px]",
   ultimo_pago: "min-w-[120px]",
 };
@@ -478,7 +523,17 @@ export default function IngresosCampoSanto() {
         label: getMonthLabel(row.periodo),
         ingreso_contratos: Number(row.ingreso_contratos ?? 0),
         ingreso_mantenimiento: Number(row.ingreso_mantenimiento ?? 0),
+        mantenimiento_principal_cobrado: Number(
+          row.mantenimiento_principal_cobrado ?? row.ingreso_mantenimiento ?? 0,
+        ),
+        mora_mantenimiento_cobrada: Number(
+          row.mora_mantenimiento_cobrada ?? 0,
+        ),
         ingreso_total: Number(row.ingreso_total ?? 0),
+        capital_cobrado: Number(row.capital_cobrado ?? 0),
+        interes_cobrado: Number(row.interes_cobrado ?? 0),
+        mora_cobrada: Number(row.mora_cobrada ?? 0),
+        otros_cobrados: Number(row.otros_cobrados ?? 0),
       })),
     [seriesRows],
   );
@@ -506,6 +561,17 @@ export default function IngresosCampoSanto() {
   const loadReport = useCallback(async () => {
     setLoading(true);
     try {
+      // Los cortes de mantenimiento se materializan antes de leer el reporte,
+      // de modo que abrir Ingresos directamente el dia 1 no muestre mora vieja.
+      const { error: maintenanceSyncError } = await supabase.rpc(
+        "sincronizar_cuotas_mantenimiento_vigentes" as never,
+        {
+          p_usuario: user?.email ?? role ?? "usuario",
+        } as never,
+      );
+
+      if (maintenanceSyncError) throw maintenanceSyncError;
+
       const args = buildRpcArgs(appliedFilters);
       const detailArgs = {
         ...args,
@@ -557,7 +623,7 @@ export default function IngresosCampoSanto() {
     } finally {
       setLoading(false);
     }
-  }, [appliedFilters, page, pageSize, sortColumn, sortDirection]);
+  }, [appliedFilters, page, pageSize, role, sortColumn, sortDirection, user?.email]);
 
   useEffect(() => {
     void loadOptions();
@@ -714,8 +780,44 @@ export default function IngresosCampoSanto() {
         total: "sum",
       },
       {
+        id: "capital_cobrado_periodo",
+        header: "Capital cobrado (cuotas + extraordinarios)",
+        getValue: (row) => Number(row.capital_cobrado_periodo ?? 0),
+        formatValue: (value) => formatCurrency(Number(value ?? 0)),
+        type: "currency",
+        align: "right",
+        total: "sum",
+      },
+      {
+        id: "interes_cobrado_periodo",
+        header: "Interes financiero cobrado",
+        getValue: (row) => Number(row.interes_cobrado_periodo ?? 0),
+        formatValue: (value) => formatCurrency(Number(value ?? 0)),
+        type: "currency",
+        align: "right",
+        total: "sum",
+      },
+      {
+        id: "mora_cobrada_periodo",
+        header: "Mora de contratos cobrada",
+        getValue: (row) => Number(row.mora_cobrada_periodo ?? 0),
+        formatValue: (value) => formatCurrency(Number(value ?? 0)),
+        type: "currency",
+        align: "right",
+        total: "sum",
+      },
+      {
+        id: "otros_cobrados_periodo",
+        header: "Otros cobros",
+        getValue: (row) => Number(row.otros_cobrados_periodo ?? 0),
+        formatValue: (value) => formatCurrency(Number(value ?? 0)),
+        type: "currency",
+        align: "right",
+        total: "sum",
+      },
+      {
         id: "mantenimiento_cobrado_periodo",
-        header: "Mantenimiento cobrado periodo",
+        header: "Mantenimiento total cobrado",
         getValue: (row) => Number(row.mantenimiento_cobrado_periodo ?? 0),
         formatValue: (value) => formatCurrency(Number(value ?? 0)),
         type: "currency",
@@ -740,6 +842,67 @@ export default function IngresosCampoSanto() {
         total: "sum",
       },
       {
+        id: "mantenimiento_principal_cobrado_periodo",
+        header: "Principal de mantenimiento cobrado",
+        getValue: (row) =>
+          Number(
+            row.mantenimiento_principal_cobrado_periodo ??
+              row.mantenimiento_cobrado_periodo ??
+              0,
+          ),
+        formatValue: (value) => formatCurrency(Number(value ?? 0)),
+        type: "currency",
+        align: "right",
+        total: "sum",
+      },
+      {
+        id: "mora_mantenimiento_cobrada_periodo",
+        header: "Mora de mantenimiento cobrada",
+        getValue: (row) => Number(row.mora_mantenimiento_cobrada_periodo ?? 0),
+        formatValue: (value) => formatCurrency(Number(value ?? 0)),
+        type: "currency",
+        align: "right",
+        total: "sum",
+      },
+      {
+        id: "mora_generada_historica",
+        header: "Mora generada historica",
+        getValue: (row) => Number(row.mora_generada_historica ?? 0),
+        formatValue: (value) => formatCurrency(Number(value ?? 0)),
+        type: "currency",
+        align: "right",
+        total: "sum",
+      },
+      {
+        id: "mora_cobrada_historica",
+        header: "Mora cobrada historica",
+        getValue: (row) => Number(row.mora_cobrada_historica ?? 0),
+        formatValue: (value) => formatCurrency(Number(value ?? 0)),
+        type: "currency",
+        align: "right",
+        total: "sum",
+      },
+      {
+        id: "mora_mantenimiento_generada_historica",
+        header: "Mora mantenimiento generada historica",
+        getValue: (row) =>
+          Number(row.mora_mantenimiento_generada_historica ?? 0),
+        formatValue: (value) => formatCurrency(Number(value ?? 0)),
+        type: "currency",
+        align: "right",
+        total: "sum",
+      },
+      {
+        id: "mora_mantenimiento_cobrada_historica",
+        header: "Mora mantenimiento cobrada historica",
+        getValue: (row) =>
+          Number(row.mora_mantenimiento_cobrada_historica ?? 0),
+        formatValue: (value) => formatCurrency(Number(value ?? 0)),
+        type: "currency",
+        align: "right",
+        total: "sum",
+      },
+      {
         id: "saldo_pendiente",
         header: "Saldo pendiente contrato",
         getValue: (row) => Number(row.saldo_pendiente_total ?? 0),
@@ -749,8 +912,44 @@ export default function IngresosCampoSanto() {
         total: "sum",
       },
       {
+        id: "capital_pendiente",
+        header: "Capital pendiente",
+        getValue: (row) => Number(row.capital_pendiente ?? 0),
+        formatValue: (value) => formatCurrency(Number(value ?? 0)),
+        type: "currency",
+        align: "right",
+        total: "sum",
+      },
+      {
+        id: "interes_pendiente",
+        header: "Interes financiero pendiente",
+        getValue: (row) => Number(row.interes_pendiente ?? 0),
+        formatValue: (value) => formatCurrency(Number(value ?? 0)),
+        type: "currency",
+        align: "right",
+        total: "sum",
+      },
+      {
+        id: "mora_pendiente",
+        header: "Mora pendiente",
+        getValue: (row) => Number(row.mora_pendiente ?? 0),
+        formatValue: (value) => formatCurrency(Number(value ?? 0)),
+        type: "currency",
+        align: "right",
+        total: "sum",
+      },
+      {
+        id: "otros_pendientes",
+        header: "Otros pendientes",
+        getValue: (row) => Number(row.otros_pendientes ?? 0),
+        formatValue: (value) => formatCurrency(Number(value ?? 0)),
+        type: "currency",
+        align: "right",
+        total: "sum",
+      },
+      {
         id: "mantenimiento_pendiente",
-        header: "Mantenimiento por cobrar",
+        header: "Principal de mantenimiento por cobrar",
         getValue: (row) => Number(row.mantenimiento_pendiente ?? 0),
         formatValue: (value) => formatCurrency(Number(value ?? 0)),
         type: "currency",
@@ -759,8 +958,46 @@ export default function IngresosCampoSanto() {
       },
       {
         id: "monto_vencido",
-        header: "Monto vencido contratos",
+        header: "Cuotas vencidas",
         getValue: (row) => Number(row.monto_vencido_total ?? 0),
+        formatValue: (value) => formatCurrency(Number(value ?? 0)),
+        type: "currency",
+        align: "right",
+        total: "sum",
+      },
+      {
+        id: "mora_mantenimiento_pendiente",
+        header: "Mora de mantenimiento por cobrar",
+        getValue: (row) => Number(row.mora_mantenimiento_pendiente ?? 0),
+        formatValue: (value) => formatCurrency(Number(value ?? 0)),
+        type: "currency",
+        align: "right",
+        total: "sum",
+      },
+      {
+        id: "total_mantenimiento_pendiente",
+        header: "Total mantenimiento por cobrar",
+        getValue: (row) =>
+          Number(row.total_mantenimiento_pendiente ?? row.mantenimiento_pendiente ?? 0),
+        formatValue: (value) => formatCurrency(Number(value ?? 0)),
+        type: "currency",
+        align: "right",
+        total: "sum",
+      },
+      {
+        id: "total_mantenimiento_vencido_con_mora",
+        header: "Mantenimiento vencido con mora",
+        getValue: (row) =>
+          Number(row.total_mantenimiento_vencido_con_mora ?? 0),
+        formatValue: (value) => formatCurrency(Number(value ?? 0)),
+        type: "currency",
+        align: "right",
+        total: "sum",
+      },
+      {
+        id: "total_vencido_con_mora",
+        header: "Total vencido con mora",
+        getValue: (row) => Number(row.total_vencido_con_mora ?? 0),
         formatValue: (value) => formatCurrency(Number(value ?? 0)),
         type: "currency",
         align: "right",
@@ -896,7 +1133,7 @@ export default function IngresosCampoSanto() {
                 Ingresos Campo Santo
               </h1>
               <p className="text-sm text-muted-foreground">
-                Indicadores financieros, pagos, saldos y detalle por contrato.
+                Cuotas, interes financiero, mora de contratos, mantenimiento y mora de mantenimiento.
               </p>
             </div>
           </div>
@@ -1152,42 +1389,73 @@ export default function IngresosCampoSanto() {
             <MetricCard
               title="Cobrado por contratos"
               value={formatCurrency(summary?.total_recaudado_contratos_periodo)}
-              hint={`${formatNumber(summary?.total_pagos_periodo)} movimientos en el periodo`}
+              hint={`Excluye mantenimiento; ${formatNumber(summary?.total_pagos_periodo)} movimientos totales en el periodo`}
               icon={TrendingUp}
               tone="emerald"
             />
             <MetricCard
               title="Saldo pendiente de contratos"
               value={formatCurrency(summary?.saldo_pendiente_total)}
-              hint={`Monto vencido: ${formatCurrency(summary?.monto_vencido_total)}`}
+              hint={`Vencido incluyendo mora: ${formatCurrency(summary?.total_vencido_con_mora)}`}
               icon={CalendarDays}
-              tone={(summary?.monto_vencido_total ?? 0) > 0 ? "rose" : "amber"}
+              tone={(summary?.total_vencido_con_mora ?? 0) > 0 ? "rose" : "amber"}
             />
             <MetricCard
               title="Capital cobrado"
               value={formatCurrency(summary?.capital_cobrado_periodo)}
-              hint={`Capital pendiente: ${formatCurrency(summary?.capital_pendiente)}`}
+              hint={`Incluye pagos extraordinarios. Capital pendiente: ${formatCurrency(summary?.capital_pendiente)}`}
               icon={Banknote}
               tone="primary"
             />
             <MetricCard
-              title="Intereses cobrados"
+              title="Interes financiero cobrado"
               value={formatCurrency(summary?.interes_cobrado_periodo)}
-              hint={`Interes pendiente: ${formatCurrency(summary?.interes_pendiente)}`}
+              hint={`Financiero pendiente: ${formatCurrency(summary?.interes_pendiente)}`}
               icon={TrendingUp}
               tone="blue"
             />
             <MetricCard
-              title="Mantenimiento recaudado"
+              title="Mora de contratos cobrada"
+              value={formatCurrency(summary?.mora_cobrada_periodo)}
+              hint={`Mora pendiente: ${formatCurrency(summary?.mora_pendiente)}`}
+              icon={TrendingUp}
+              tone={(summary?.mora_pendiente ?? 0) > 0 ? "rose" : "emerald"}
+            />
+            <MetricCard
+              title="Mora generada historica"
+              value={formatCurrency(summary?.mora_generada_historica)}
+              hint={`Mora cobrada historica: ${formatCurrency(summary?.mora_cobrada_historica)}`}
+              icon={CalendarDays}
+              tone="amber"
+            />
+            <MetricCard
+              title="Mantenimiento recaudado total"
               value={formatCurrency(summary?.mantenimiento_recaudado_periodo)}
-              hint="Cobrado dentro del periodo filtrado"
+              hint={`Principal: ${formatCurrency(summary?.mantenimiento_principal_cobrado_periodo ?? summary?.mantenimiento_recaudado_periodo)} · Mora: ${formatCurrency(summary?.mora_mantenimiento_cobrada_periodo)}`}
               icon={CalendarDays}
               tone="emerald"
             />
             <MetricCard
-              title="Mantenimiento por cobrar"
-              value={formatCurrency(summary?.mantenimiento_pendiente)}
-              hint="No forma parte del saldo del contrato"
+              title="Mora de mantenimiento cobrada"
+              value={formatCurrency(summary?.mora_mantenimiento_cobrada_periodo)}
+              hint={`Pendiente: ${formatCurrency(summary?.mora_mantenimiento_pendiente)}`}
+              icon={TrendingUp}
+              tone={(summary?.mora_mantenimiento_pendiente ?? 0) > 0 ? "rose" : "emerald"}
+            />
+            <MetricCard
+              title="Mora mantenimiento generada historica"
+              value={formatCurrency(summary?.mora_mantenimiento_generada_historica)}
+              hint={`Cobrada historica: ${formatCurrency(summary?.mora_mantenimiento_cobrada_historica)}`}
+              icon={CalendarDays}
+              tone="amber"
+            />
+            <MetricCard
+              title="Mantenimiento total por cobrar"
+              value={formatCurrency(
+                summary?.total_mantenimiento_pendiente ??
+                  summary?.mantenimiento_pendiente,
+              )}
+              hint={`Principal: ${formatCurrency(summary?.mantenimiento_pendiente)} · Mora: ${formatCurrency(summary?.mora_mantenimiento_pendiente)}`}
               icon={CalendarDays}
               tone="amber"
             />
@@ -1211,7 +1479,7 @@ export default function IngresosCampoSanto() {
             <CardHeader>
               <CardTitle className="text-xl">Ingresos mensuales</CardTitle>
               <CardDescription>
-                Contratos y mantenimiento segun el periodo filtrado.
+                Capital, interes financiero, mora de contratos, mantenimiento y su mora sin duplicar cobros.
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -1239,15 +1507,40 @@ export default function IngresosCampoSanto() {
                       />
                       <Legend />
                       <Bar
-                        dataKey="ingreso_contratos"
-                        name="Contratos"
+                        dataKey="capital_cobrado"
+                        name="Capital (cuotas + extraordinarios)"
                         fill="#2f855a"
-                        radius={[4, 4, 0, 0]}
+                        stackId="ingresos"
                       />
                       <Bar
-                        dataKey="ingreso_mantenimiento"
-                        name="Mantenimiento"
+                        dataKey="interes_cobrado"
+                        name="Interes financiero"
                         fill="#2563eb"
+                        stackId="ingresos"
+                      />
+                      <Bar
+                        dataKey="mora_cobrada"
+                        name="Mora contratos"
+                        fill="#e11d48"
+                        stackId="ingresos"
+                      />
+                      <Bar
+                        dataKey="otros_cobrados"
+                        name="Otros"
+                        fill="#64748b"
+                        stackId="ingresos"
+                      />
+                      <Bar
+                        dataKey="mantenimiento_principal_cobrado"
+                        name="Principal mantenimiento"
+                        fill="#d97706"
+                        stackId="ingresos"
+                      />
+                      <Bar
+                        dataKey="mora_mantenimiento_cobrada"
+                        name="Mora mantenimiento"
+                        fill="#f97316"
+                        stackId="ingresos"
                         radius={[4, 4, 0, 0]}
                       />
                     </BarChart>
@@ -1261,31 +1554,54 @@ export default function IngresosCampoSanto() {
             <CardHeader>
               <CardTitle className="text-xl">Desglose de ingresos</CardTitle>
               <CardDescription>
-                El mantenimiento se contabiliza por separado de los cobros del contrato.
+                Cada monto recibido se presenta una sola vez segun su aplicacion contable.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               {[
                 {
-                  label: "Cobros de contratos",
-                  value: summary?.total_recaudado_contratos_periodo,
+                  label: "Capital cobrado",
+                  value: summary?.capital_cobrado_periodo,
                   className: "bg-emerald-500",
                   total: summary?.total_recaudado_periodo,
-                  hint: "No incluye mantenimiento",
+                  hint: "Incluye cuotas y pagos extraordinarios aplicados directamente al capital",
                 },
                 {
-                  label: "Cobros de mantenimiento",
-                  value: summary?.mantenimiento_recaudado_periodo,
+                  label: "Interes financiero cobrado",
+                  value: summary?.interes_cobrado_periodo,
                   className: "bg-sky-500",
                   total: summary?.total_recaudado_periodo,
-                  hint: "Contabilizado por separado",
+                  hint: "Interes normal incluido en las cuotas",
+                },
+                {
+                  label: "Mora de contratos cobrada",
+                  value: summary?.mora_cobrada_periodo,
+                  className: "bg-rose-500",
+                  total: summary?.total_recaudado_periodo,
+                  hint: "Interes moratorio de las cuotas del contrato",
                 },
                 {
                   label: "Otros cobros del contrato",
                   value: summary?.otros_cobrados_periodo,
                   className: "bg-slate-500",
-                  total: summary?.total_recaudado_contratos_periodo,
-                  hint: "Incluido en cobros de contratos",
+                  total: summary?.total_recaudado_periodo,
+                  hint: "Excluye expresamente la mora",
+                },
+                {
+                  label: "Principal de mantenimiento cobrado",
+                  value:
+                    summary?.mantenimiento_principal_cobrado_periodo ??
+                    summary?.mantenimiento_recaudado_periodo,
+                  className: "bg-amber-500",
+                  total: summary?.total_recaudado_periodo,
+                  hint: "Anualidades cobradas, sin incluir su interes moratorio",
+                },
+                {
+                  label: "Mora de mantenimiento cobrada",
+                  value: summary?.mora_mantenimiento_cobrada_periodo,
+                  className: "bg-orange-500",
+                  total: summary?.total_recaudado_periodo,
+                  hint: "Interes moratorio de mantenimiento, contabilizado por separado",
                 },
               ].map((item) => {
                 const total = Number(item.total ?? 0);

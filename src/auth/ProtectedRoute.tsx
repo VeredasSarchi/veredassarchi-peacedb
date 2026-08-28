@@ -1,12 +1,11 @@
 import { ReactNode } from "react";
 import { Navigate } from "react-router-dom";
 import { useAuth } from "./AuthContext";
-
-type Role = "admin" | "vendedor";
+import type { AppRole } from "./roles";
 
 type ProtectedRouteProps = {
   children: ReactNode;
-  allowedRoles?: Role[];
+  allowedRoles?: AppRole[];
 };
 
 export function ProtectedRoute({ children, allowedRoles }: ProtectedRouteProps) {
@@ -20,7 +19,7 @@ export function ProtectedRoute({ children, allowedRoles }: ProtectedRouteProps) 
     return <Navigate to="/login" replace />;
   }
 
-  if (allowedRoles && !allowedRoles.includes(role as Role)) {
+  if (allowedRoles && (!role || !allowedRoles.includes(role))) {
     return <Navigate to="/unauthorized" replace />;
   }
 

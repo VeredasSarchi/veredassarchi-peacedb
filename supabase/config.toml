@@ -1,1 +1,8 @@
 project_id = "yomrocqrrufbexghxcte"
+
+[functions.admin-users]
+# La funcion valida el Bearer token dentro del handler para que el navegador
+# pueda completar el preflight OPTIONS sin que el gateway lo rechace antes de
+# aplicar CORS. Las operaciones reales siguen exigiendo un JWT de usuario y
+# rol admin en supabase/functions/admin-users/index.ts.
+verify_jwt = false
