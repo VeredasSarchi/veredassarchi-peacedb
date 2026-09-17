@@ -21,6 +21,7 @@ import JardinDetalle from "@/pages/JardinDetalle";
 import OneDriveAdmin from "@/pages/OneDriveAdmin";
 import OneDriveCallback from "@/pages/OneDriveCallback";
 import Usuarios from "@/pages/Usuarios";
+import Referidos from "@/pages/Referidos";
 import NotFound from "@/pages/NotFound";
 import Navigation from "@/components/Navigation";
 import AppFooter from "@/components/AppFooter";
@@ -167,6 +168,15 @@ function AppLayout() {
             element={
               <ProtectedRoute allowedRoles={["admin", "vendedor"]}>
                 <JardinDetalle />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/referidos"
+            element={
+              <ProtectedRoute allowedRoles={["admin", "vendedor"]}>
+                <Referidos />
               </ProtectedRoute>
             }
           />

@@ -134,6 +134,20 @@ type MantenimientoPagoAplicacionRow = {
   notas: string | null;
 };
 
+type MantenimientoCreditoReferidoRow = {
+  id_aplicacion: number;
+  id_beneficio: number;
+  id_contrato_destino: number;
+  id_cuota_mantenimiento: number;
+  monto_aplicado: number;
+  aplicado_por: string | null;
+  created_at: string;
+  id_referido: number;
+  referido_nombre: string;
+  cliente_referente_nombre: string;
+  contrato_venta_formulario: string | null;
+};
+
 type MantenimientoCargoRow = {
   id_cargo_mantenimiento: number;
   id_contrato: number;
@@ -389,6 +403,9 @@ export default function ControlMantenimiento() {
   selectedContractIdRef.current = selectedContractId;
   const [detailCuotas, setDetailCuotas] = useState<ControlMantenimientoCuotaRow[]>([]);
   const [detailPagos, setDetailPagos] = useState<MantenimientoPagoRow[]>([]);
+  const [detailCreditosReferidos, setDetailCreditosReferidos] = useState<
+    MantenimientoCreditoReferidoRow[]
+  >([]);
   const [detailAplicaciones, setDetailAplicaciones] = useState<
     MantenimientoPagoAplicacionRow[]
   >([]);
@@ -481,6 +498,7 @@ export default function ControlMantenimiento() {
       setDetailContractId(null);
       setDetailCuotas([]);
       setDetailPagos([]);
+      setDetailCreditosReferidos([]);
       setDetailAplicaciones([]);
       setDetailCargos([]);
       setDetailCalculosMora([]);
@@ -507,7 +525,7 @@ export default function ControlMantenimiento() {
 
         if (requestId !== detailRequestIdRef.current) return;
 
-        const [cuotasRes, pagosRes, cargosRes, calculosMoraRes, resumenRes] =
+        const [cuotasRes, pagosRes, cargosRes, calculosMoraRes, resumenRes, creditosRes] =
           await Promise.all([
             supabase
               .from("vw_control_mantenimiento_cuotas" as never)
@@ -536,6 +554,9 @@ export default function ControlMantenimiento() {
               .select("*")
               .eq("id_contrato", contractId)
               .maybeSingle(),
+            supabase.rpc("obtener_creditos_referidos_mantenimiento", {
+              p_id_contrato: contractId,
+            }),
           ]);
 
         if (cuotasRes.error) throw cuotasRes.error;
@@ -543,6 +564,7 @@ export default function ControlMantenimiento() {
         if (cargosRes.error) throw cargosRes.error;
         if (calculosMoraRes.error) throw calculosMoraRes.error;
         if (resumenRes.error) throw resumenRes.error;
+        if (creditosRes.error) throw creditosRes.error;
 
         const pagos = (pagosRes.data as MantenimientoPagoRow[] | null) ?? [];
         const paymentIds = pagos.map((pago) => pago.id_pago_mantenimiento);
@@ -567,6 +589,9 @@ export default function ControlMantenimiento() {
           (cuotasRes.data as ControlMantenimientoCuotaRow[] | null) ?? [],
         );
         setDetailPagos(pagos);
+        setDetailCreditosReferidos(
+          (creditosRes.data as unknown as MantenimientoCreditoReferidoRow[] | null) ?? [],
+        );
         setDetailAplicaciones(aplicaciones);
         setDetailCargos(
           (cargosRes.data as MantenimientoCargoRow[] | null) ?? [],
@@ -597,6 +622,7 @@ export default function ControlMantenimiento() {
           );
           setDetailCuotas([]);
           setDetailPagos([]);
+          setDetailCreditosReferidos([]);
           setDetailAplicaciones([]);
           setDetailCargos([]);
           setDetailCalculosMora([]);
@@ -659,6 +685,7 @@ export default function ControlMantenimiento() {
       setSelectedContractId(null);
       setDetailCuotas([]);
       setDetailPagos([]);
+      setDetailCreditosReferidos([]);
       setDetailAplicaciones([]);
       setDetailCargos([]);
       setDetailCalculosMora([]);
@@ -924,7 +951,7 @@ export default function ControlMantenimiento() {
       selectedDetailTab === "cuotas"
         ? currentMaintenanceCharges.length
         : selectedDetailTab === "pagos"
-          ? detailPagos.length
+          ? detailPagos.length + detailCreditosReferidos.length
           : detailCalculosMora.length;
     if (activeRowCount === 0) {
       toast.error("No hay datos para exportar en esta pestaña");
@@ -1026,14 +1053,21 @@ export default function ControlMantenimiento() {
           rows: currentMaintenanceCharges,
         } satisfies ReportPayload<ControlMantenimientoCuotaRow>);
       } else if (selectedDetailTab === "pagos") {
-        type PaymentExportRow = MantenimientoPagoRow & {
-          displayNumber: number;
+        type PaymentExportRow = {
+          label: string;
+          tipo: string;
+          estado: string;
+          fecha: string;
+          metodo: string;
+          montoTotal: number;
+          referencia: string;
+          observacion: string;
           aplicacionesTexto: string;
           principalAplicado: number;
           moraAplicada: number;
         };
 
-        const paymentRows: PaymentExportRow[] = detailPagos.map((pago) => {
+        const cashPaymentRows: PaymentExportRow[] = detailPagos.map((pago) => {
           const aplicaciones =
             paymentApplicationsById.get(pago.id_pago_mantenimiento) ?? [];
           const principalAplicado = aplicaciones.reduce(
@@ -1051,12 +1085,19 @@ export default function ControlMantenimiento() {
             0,
           );
           return {
-            ...pago,
+            label: `Pago #${
+              paymentDisplayNumberById.get(pago.id_pago_mantenimiento) ??
+              pago.id_pago_mantenimiento
+            }`,
+            tipo: pago.tipo_pago === "MORA" ? "Pago de mora" : "Mantenimiento",
+            estado: pago.estado,
+            fecha: pago.fecha_pago,
+            metodo: pago.metodo_pago || "",
+            montoTotal: Number(pago.monto_total ?? 0),
+            referencia: pago.referencia || "",
+            observacion: pago.observacion || "",
             principalAplicado,
             moraAplicada,
-            displayNumber:
-              paymentDisplayNumberById.get(pago.id_pago_mantenimiento) ??
-              pago.id_pago_mantenimiento,
             aplicacionesTexto:
               aplicaciones
                 .map((application) => {
@@ -1087,18 +1128,42 @@ export default function ControlMantenimiento() {
           };
         });
 
+        const referralCreditRows: PaymentExportRow[] = detailCreditosReferidos.map(
+          (credito) => ({
+            label: `Crédito referido #${credito.id_referido}`,
+            tipo: "Beneficio no monetario",
+            estado: "APLICADO",
+            fecha: credito.created_at,
+            metodo: "Crédito por referido",
+            montoTotal: credito.monto_aplicado,
+            referencia: credito.contrato_venta_formulario
+              ? `Venta formulario ${credito.contrato_venta_formulario}`
+              : `Beneficio #${credito.id_beneficio}`,
+            observacion: `Venta lograda: ${credito.referido_nombre}`,
+            aplicacionesTexto: `Principal de mantenimiento: ${formatCurrency(
+              credito.monto_aplicado,
+            )}`,
+            principalAplicado: credito.monto_aplicado,
+            moraAplicada: 0,
+          }),
+        );
+
+        const paymentRows = [...cashPaymentRows, ...referralCreditRows].sort(
+          (left, right) =>
+            new Date(right.fecha).getTime() - new Date(left.fecha).getTime(),
+        );
+
         const columns: ReportColumn<PaymentExportRow>[] = [
           {
             id: "pago",
             header: "Pago",
-            getValue: (row) => `Pago #${row.displayNumber}`,
+            getValue: (row) => row.label,
             type: "text",
           },
           {
             id: "tipo",
             header: "Tipo",
-            getValue: (row) =>
-              row.tipo_pago === "MORA" ? "Pago de mora" : "Mantenimiento",
+            getValue: (row) => row.tipo,
             type: "text",
           },
           {
@@ -1110,14 +1175,14 @@ export default function ControlMantenimiento() {
           {
             id: "fecha",
             header: "Fecha",
-            getValue: (row) => parseCalendarDate(row.fecha_pago),
-            formatValue: (_value, row) => formatDate(row.fecha_pago),
+            getValue: (row) => parseCalendarDate(row.fecha),
+            formatValue: (_value, row) => formatDate(row.fecha),
             type: "date",
           },
           {
             id: "metodo",
             header: "Metodo",
-            getValue: (row) => row.metodo_pago || "",
+            getValue: (row) => row.metodo,
             type: "text",
           },
           {
@@ -1141,7 +1206,7 @@ export default function ControlMantenimiento() {
           {
             id: "monto_total",
             header: "Monto total",
-            getValue: (row) => Number(row.monto_total ?? 0),
+            getValue: (row) => row.montoTotal,
             formatValue: (value) => formatCurrency(Number(value ?? 0)),
             type: "currency",
             align: "right",
@@ -1150,13 +1215,13 @@ export default function ControlMantenimiento() {
           {
             id: "referencia",
             header: "Referencia",
-            getValue: (row) => row.referencia || "",
+            getValue: (row) => row.referencia,
             type: "text",
           },
           {
             id: "observacion",
             header: "Observacion",
-            getValue: (row) => row.observacion || "",
+            getValue: (row) => row.observacion,
             type: "text",
           },
           {
@@ -1298,6 +1363,7 @@ export default function ControlMantenimiento() {
     cuotasById,
     currentMaintenanceCharges,
     detailCalculosMora,
+    detailCreditosReferidos,
     detailMatchesSelection,
     detailPagos,
     paymentApplicationsById,
@@ -1911,7 +1977,7 @@ export default function ControlMantenimiento() {
                         (selectedDetailTab === "cuotas"
                           ? currentMaintenanceCharges.length === 0
                           : selectedDetailTab === "pagos"
-                            ? detailPagos.length === 0
+                            ? detailPagos.length + detailCreditosReferidos.length === 0
                             : detailCalculosMora.length === 0)
                       }
                     >
@@ -2023,13 +2089,48 @@ export default function ControlMantenimiento() {
                         </TabsContent>
 
                         <TabsContent value="pagos">
-                          {detailPagos.length === 0 ? (
+                          {detailPagos.length === 0 && detailCreditosReferidos.length === 0 ? (
                             <EmptyPanel
                               title="Sin pagos registrados"
                               description="Aqui apareceran los pagos de principal y mora de mantenimiento."
                             />
                           ) : (
                             <div className="space-y-4">
+                              {detailCreditosReferidos.map((credito) => (
+                                <div
+                                  key={`credito-referido-${credito.id_aplicacion}`}
+                                  className="rounded-xl border border-emerald-200 bg-emerald-50/60 p-4"
+                                >
+                                  <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                                    <div>
+                                      <div className="flex flex-wrap items-center gap-2">
+                                        <p className="font-semibold text-foreground">
+                                          Crédito por referido #{credito.id_referido}
+                                        </p>
+                                        <Badge className="bg-emerald-100 text-emerald-800 hover:bg-emerald-100">
+                                          Beneficio no monetario
+                                        </Badge>
+                                      </div>
+                                      <p className="mt-1 text-sm text-muted-foreground">
+                                        {formatDate(credito.created_at)} · Venta lograda: {credito.referido_nombre}
+                                      </p>
+                                      {credito.contrato_venta_formulario && (
+                                        <p className="mt-1 text-xs text-muted-foreground">
+                                          Formulario de la venta referida: {credito.contrato_venta_formulario}
+                                        </p>
+                                      )}
+                                    </div>
+                                    <div className="text-right">
+                                      <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                                        Monto acreditado
+                                      </p>
+                                      <p className="text-lg font-semibold text-emerald-800">
+                                        {formatCurrency(credito.monto_aplicado)}
+                                      </p>
+                                    </div>
+                                  </div>
+                                </div>
+                              ))}
                               {detailPagos.map((pago) => {
                                 const aplicaciones =
                                   paymentApplicationsById.get(

@@ -20,6 +20,7 @@ import {
   Trees,
   Link,
   Users,
+  UserRoundPlus,
 } from "lucide-react";
 
 const AdminHome = () => {
@@ -124,6 +125,14 @@ const AdminHome = () => {
               description: "Gestion de espacios, disponibilidad y ubicaciones.",
               icon: Trees,
               action: () => navigate("/jardines"),
+              actionLabel: "Acceder",
+              disabled: false,
+            },
+            {
+              title: "Referidos",
+              description: "Gestiona prospectos referidos, conversiones y beneficios de mantenimiento.",
+              icon: UserRoundPlus,
+              action: () => navigate("/referidos"),
               actionLabel: "Acceder",
               disabled: false,
             },

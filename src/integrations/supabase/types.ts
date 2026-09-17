@@ -53,6 +53,179 @@ export type Database = {
         }
         Relationships: []
       }
+      referido: {
+        Row: {
+          actualizado_por: string | null
+          creado_por: string | null
+          created_at: string
+          email: string | null
+          email_normalizado: string | null
+          estado: string
+          fecha_conversion: string | null
+          id_cliente_convertido: number | null
+          id_cliente_referente: number
+          id_contrato_convertido: number | null
+          id_contrato_origen: number
+          id_referido: number
+          id_vendedor_captador: number
+          id_vendedor_responsable: number
+          motivo_inutilizacion: string | null
+          nombre: string
+          observaciones: string | null
+          telefono: string
+          telefono_normalizado: string
+          updated_at: string
+        }
+        Insert: {
+          actualizado_por?: string | null
+          creado_por?: string | null
+          created_at?: string
+          email?: string | null
+          estado?: string
+          fecha_conversion?: string | null
+          id_cliente_convertido?: number | null
+          id_cliente_referente: number
+          id_contrato_convertido?: number | null
+          id_contrato_origen: number
+          id_referido?: number
+          id_vendedor_captador: number
+          id_vendedor_responsable: number
+          motivo_inutilizacion?: string | null
+          nombre: string
+          observaciones?: string | null
+          telefono: string
+          updated_at?: string
+        }
+        Update: {
+          actualizado_por?: string | null
+          creado_por?: string | null
+          created_at?: string
+          email?: string | null
+          estado?: string
+          fecha_conversion?: string | null
+          id_cliente_convertido?: number | null
+          id_cliente_referente?: number
+          id_contrato_convertido?: number | null
+          id_contrato_origen?: number
+          id_referido?: number
+          id_vendedor_captador?: number
+          id_vendedor_responsable?: number
+          motivo_inutilizacion?: string | null
+          nombre?: string
+          observaciones?: string | null
+          telefono?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      referido_beneficio: {
+        Row: {
+          estado: string
+          fecha_generacion: string
+          generado_por: string | null
+          id_beneficio: number
+          id_contrato_venta_referida: number
+          id_referido: number
+          monto_anulado: number
+          monto_disponible: number
+          monto_original: number
+          motivo_anulacion: string | null
+          updated_at: string
+        }
+        Insert: {
+          estado?: string
+          fecha_generacion?: string
+          generado_por?: string | null
+          id_beneficio?: number
+          id_contrato_venta_referida: number
+          id_referido: number
+          monto_anulado?: number
+          monto_disponible?: number
+          monto_original?: number
+          motivo_anulacion?: string | null
+          updated_at?: string
+        }
+        Update: {
+          estado?: string
+          fecha_generacion?: string
+          generado_por?: string | null
+          id_beneficio?: number
+          id_contrato_venta_referida?: number
+          id_referido?: number
+          monto_anulado?: number
+          monto_disponible?: number
+          monto_original?: number
+          motivo_anulacion?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      referido_beneficio_aplicacion: {
+        Row: {
+          aplicado_por: string | null
+          created_at: string
+          estado: string
+          id_aplicacion: number
+          id_beneficio: number
+          id_contrato_destino: number
+          id_cuota_mantenimiento: number
+          idempotency_key: string
+          monto_aplicado: number
+          monto_solicitado: number
+        }
+        Insert: {
+          aplicado_por?: string | null
+          created_at?: string
+          estado?: string
+          id_aplicacion?: number
+          id_beneficio: number
+          id_contrato_destino: number
+          id_cuota_mantenimiento: number
+          idempotency_key: string
+          monto_aplicado: number
+          monto_solicitado: number
+        }
+        Update: {
+          aplicado_por?: string | null
+          created_at?: string
+          estado?: string
+          id_aplicacion?: number
+          id_beneficio?: number
+          id_contrato_destino?: number
+          id_cuota_mantenimiento?: number
+          idempotency_key?: string
+          monto_aplicado?: number
+          monto_solicitado?: number
+        }
+        Relationships: []
+      }
+      referido_evento: {
+        Row: {
+          created_at: string
+          detalle: Json
+          id_evento: number
+          id_referido: number
+          tipo_evento: string
+          usuario: string | null
+        }
+        Insert: {
+          created_at?: string
+          detalle?: Json
+          id_evento?: number
+          id_referido: number
+          tipo_evento: string
+          usuario?: string | null
+        }
+        Update: {
+          created_at?: string
+          detalle?: Json
+          id_evento?: number
+          id_referido?: number
+          tipo_evento?: string
+          usuario?: string | null
+        }
+        Relationships: []
+      }
       contrato: {
         Row: {
           anio_inicio_mantenimiento: number | null
@@ -66,6 +239,7 @@ export type Database = {
           fecha_primera_cuota: string | null
           id_cliente: number
           id_contrato: number
+          id_referido_origen: number | null
           id_vendedor: number
           monto_apertura: number | null
           monto_arrendamiento_total: number | null
@@ -102,6 +276,7 @@ export type Database = {
           fecha_primera_cuota?: string | null
           id_cliente: number
           id_contrato?: number
+          id_referido_origen?: number | null
           id_vendedor: number
           monto_apertura?: number | null
           monto_arrendamiento_total?: number | null
@@ -138,6 +313,7 @@ export type Database = {
           fecha_primera_cuota?: string | null
           id_cliente?: number
           id_contrato?: number
+          id_referido_origen?: number | null
           id_vendedor?: number
           monto_apertura?: number | null
           monto_arrendamiento_total?: number | null
@@ -887,6 +1063,7 @@ export type Database = {
           fecha_vencimiento: string
           id_contrato: number
           id_cuota_mantenimiento: number
+          monto_creditado: number
           monto_pagado: number
           monto_programado: number
           notas: string | null
@@ -901,6 +1078,7 @@ export type Database = {
           fecha_vencimiento: string
           id_contrato: number
           id_cuota_mantenimiento?: number
+          monto_creditado?: number
           monto_pagado?: number
           monto_programado: number
           notas?: string | null
@@ -915,6 +1093,7 @@ export type Database = {
           fecha_vencimiento?: string
           id_contrato?: number
           id_cuota_mantenimiento?: number
+          monto_creditado?: number
           monto_pagado?: number
           monto_programado?: number
           notas?: string | null
@@ -1992,6 +2171,27 @@ export type Database = {
         }
         Relationships: []
       }
+      vendedor_usuario_referidos: {
+        Row: {
+          asociado_por: string | null
+          created_at: string
+          id_usuario: string
+          id_vendedor: number
+        }
+        Insert: {
+          asociado_por?: string | null
+          created_at?: string
+          id_usuario: string
+          id_vendedor: number
+        }
+        Update: {
+          asociado_por?: string | null
+          created_at?: string
+          id_usuario?: string
+          id_vendedor?: number
+        }
+        Relationships: []
+      }
     }
     Views: {
       vw_contrato_pago_extraordinario_historial: {
@@ -2178,6 +2378,30 @@ export type Database = {
       }
     }
     Functions: {
+      asociar_usuario_vendedor_referidos: {
+        Args: { p_id_usuario: string; p_id_vendedor?: number | null }
+        Returns: Json
+      }
+      actualizar_estado_referido: {
+        Args: {
+          p_estado: string
+          p_id_referido: number
+          p_observacion?: string | null
+          p_usuario?: string | null
+        }
+        Returns: Json
+      }
+      aplicar_beneficio_referido_mantenimiento: {
+        Args: {
+          p_id_beneficio: number
+          p_id_contrato_destino: number
+          p_idempotency_key?: string | null
+          p_monto?: number | null
+          p_usuario?: string | null
+        }
+        Returns: Json
+      }
+      obtener_asociaciones_vendedores_referidos: { Args: never; Returns: Json }
       anular_contrato: {
         Args: { p_id_contrato: number; p_usuario?: string }
         Returns: Json
@@ -2204,6 +2428,10 @@ export type Database = {
           p_tasa_interes_anual?: number
           p_usuario?: string
         }
+        Returns: Json
+      }
+      desvincular_referido_precontrato: {
+        Args: { p_id_contrato: number; p_usuario?: string | null }
         Returns: Json
       }
       formalizar_contrato_y_generar_plan_pago: {
@@ -2243,6 +2471,11 @@ export type Database = {
       obtener_proxima_fecha_calculo_mora_mantenimiento: {
         Args: { p_id_contrato: number }
         Returns: string
+      }
+      obtener_panel_referidos: { Args: never; Returns: Json }
+      obtener_creditos_referidos_mantenimiento: {
+        Args: { p_id_contrato: number }
+        Returns: Json
       }
       proyectar_pago_extraordinario_contrato: {
         Args: {
@@ -2291,6 +2524,18 @@ export type Database = {
           p_observacion?: string
           p_referencia?: string
           p_usuario?: string
+        }
+        Returns: Json
+      }
+      registrar_referido: {
+        Args: {
+          p_email?: string | null
+          p_id_contrato_origen: number
+          p_id_vendedor_responsable?: number | null
+          p_nombre: string
+          p_observaciones?: string | null
+          p_telefono: string
+          p_usuario?: string | null
         }
         Returns: Json
       }
@@ -2371,6 +2616,14 @@ export type Database = {
           p_id_contrato: number
           p_monto_extraordinario: number
           p_usuario?: string
+        }
+        Returns: Json
+      }
+      vincular_referido_precontrato: {
+        Args: {
+          p_id_contrato: number
+          p_id_referido: number
+          p_usuario?: string | null
         }
         Returns: Json
       }

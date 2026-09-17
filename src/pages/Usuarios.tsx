@@ -70,6 +70,9 @@ import {
 
 type RoleFilter = "todos" | AdminUserRole | "sin_rol";
 
+type VendedorComercial = { id_vendedor: number; nombre_completo: string };
+type AsociacionVendedor = { id_vendedor: number; id_usuario: string };
+
 type UserFormState = {
   email: string;
   role: AdminUserRole | "";
@@ -108,6 +111,11 @@ export default function Usuarios() {
   const navigate = useNavigate();
   const { user: currentUser } = useAuth();
   const [users, setUsers] = useState<ManagedAuthUser[]>([]);
+  const [vendedoresComerciales, setVendedoresComerciales] = useState<VendedorComercial[]>([]);
+  const [asociacionesVendedores, setAsociacionesVendedores] = useState<AsociacionVendedor[]>([]);
+  const [associationTarget, setAssociationTarget] = useState<ManagedAuthUser | null>(null);
+  const [associationVendorId, setAssociationVendorId] = useState("");
+  const [savingAssociation, setSavingAssociation] = useState(false);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState<RoleFilter>("todos");
@@ -124,7 +132,18 @@ export default function Usuarios() {
   const loadUsers = useCallback(async () => {
     setLoading(true);
     try {
-      setUsers(await listManagedUsers());
+      const [managedUsers, vendedoresResult, associationsResult] = await Promise.all([
+        listManagedUsers(),
+        supabase.from("vendedor").select("id_vendedor,nombre_completo").order("nombre_completo"),
+        supabase.rpc("obtener_asociaciones_vendedores_referidos" as never),
+      ]);
+      if (vendedoresResult.error) throw vendedoresResult.error;
+      if (associationsResult.error) throw associationsResult.error;
+      setUsers(managedUsers);
+      setVendedoresComerciales((vendedoresResult.data as VendedorComercial[] | null) ?? []);
+      setAsociacionesVendedores(
+        (associationsResult.data as AsociacionVendedor[] | null) ?? [],
+      );
     } catch (error) {
       console.error("Error cargando usuarios:", error);
       toast.error(getErrorMessage(error, "No se pudieron cargar los usuarios"));
@@ -145,6 +164,15 @@ export default function Usuarios() {
       unassigned: users.filter((item) => item.role === null).length,
     }),
     [users],
+  );
+
+  const associationByUser = useMemo(
+    () => new Map(asociacionesVendedores.map((item) => [item.id_usuario, item.id_vendedor])),
+    [asociacionesVendedores],
+  );
+  const vendorById = useMemo(
+    () => new Map(vendedoresComerciales.map((item) => [item.id_vendedor, item.nombre_completo])),
+    [vendedoresComerciales],
   );
 
   const filteredUsers = useMemo(() => {
@@ -178,6 +206,35 @@ export default function Usuarios() {
   const openDeleteDialog = (selectedUser: ManagedAuthUser) => {
     setDeleteTarget(selectedUser);
     setDeleteConfirmation("");
+  };
+
+  const openAssociationDialog = (selectedUser: ManagedAuthUser) => {
+    const current = associationByUser.get(selectedUser.id);
+    setAssociationTarget(selectedUser);
+    setAssociationVendorId(current ? String(current) : "SIN_ASOCIAR");
+  };
+
+  const saveAssociation = async () => {
+    if (!associationTarget) return;
+    setSavingAssociation(true);
+    try {
+      const idVendedor = associationVendorId === "SIN_ASOCIAR"
+        ? null
+        : Number(associationVendorId);
+      const { error } = await supabase.rpc(
+        "asociar_usuario_vendedor_referidos" as never,
+        { p_id_usuario: associationTarget.id, p_id_vendedor: idVendedor } as never,
+      );
+      if (error) throw error;
+      toast.success(idVendedor ? "Vendedor asociado a la cuenta" : "Asociación eliminada");
+      setAssociationTarget(null);
+      await loadUsers();
+    } catch (error) {
+      console.error("Error asociando vendedor:", error);
+      toast.error(getErrorMessage(error, "No se pudo asociar el vendedor"));
+    } finally {
+      setSavingAssociation(false);
+    }
   };
 
   const handleSave = async () => {
@@ -385,6 +442,7 @@ export default function Usuarios() {
                   <TableRow>
                     <TableHead>Correo</TableHead>
                     <TableHead>Rol</TableHead>
+                    <TableHead>Vendedor comercial</TableHead>
                     <TableHead>Creado</TableHead>
                     <TableHead>Ultimo acceso</TableHead>
                     <TableHead className="text-right">Acciones</TableHead>
@@ -419,10 +477,22 @@ export default function Usuarios() {
                           {getRoleLabel(item.role)}
                         </Badge>
                       </TableCell>
+                      <TableCell>
+                        {associationByUser.has(item.id)
+                          ? vendorById.get(associationByUser.get(item.id)!) ?? "Vendedor no encontrado"
+                          : item.role === "vendedor"
+                            ? <span className="text-destructive">Sin asociar — sin acceso a referidos</span>
+                            : "—"}
+                      </TableCell>
                       <TableCell>{formatDateTime(item.createdAt)}</TableCell>
                       <TableCell>{formatDateTime(item.lastSignInAt)}</TableCell>
                       <TableCell>
                         <div className="flex justify-end gap-2">
+                          {(item.role === "vendedor" || associationByUser.has(item.id)) && (
+                            <Button size="sm" variant="secondary" onClick={() => openAssociationDialog(item)}>
+                              Asociar
+                            </Button>
+                          )}
                           <Button
                             size="sm"
                             variant="outline"
@@ -571,6 +641,51 @@ export default function Usuarios() {
             </Button>
             <Button onClick={() => void handleSave()} disabled={saving}>
               {saving ? "Guardando..." : editingUser ? "Guardar cambios" : "Crear usuario"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={Boolean(associationTarget)}
+        onOpenChange={(open) => !open && !savingAssociation && setAssociationTarget(null)}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Asociar cuenta con vendedor comercial</DialogTitle>
+            <DialogDescription>
+              Esta asociación determina qué contratos y referidos podrá consultar la cuenta.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <p className="break-all text-sm font-medium">{associationTarget?.email}</p>
+            <Select value={associationVendorId} onValueChange={setAssociationVendorId} disabled={savingAssociation}>
+              <SelectTrigger><SelectValue placeholder="Selecciona el vendedor" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="SIN_ASOCIAR">Sin asociar</SelectItem>
+                {vendedoresComerciales
+                  .filter(() => associationTarget?.role === "vendedor")
+                  .filter((vendor) => !asociacionesVendedores.some(
+                    (association) => association.id_vendedor === vendor.id_vendedor
+                      && association.id_usuario !== associationTarget?.id,
+                  ))
+                  .map((vendor) => (
+                    <SelectItem key={vendor.id_vendedor} value={String(vendor.id_vendedor)}>
+                      {vendor.nombre_completo}
+                    </SelectItem>
+                  ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              Una cuenta sin asociación no puede registrar referidos ni ver el reporte.
+            </p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAssociationTarget(null)} disabled={savingAssociation}>
+              Cancelar
+            </Button>
+            <Button onClick={() => void saveAssociation()} disabled={savingAssociation || !associationVendorId}>
+              Guardar asociación
             </Button>
           </DialogFooter>
         </DialogContent>

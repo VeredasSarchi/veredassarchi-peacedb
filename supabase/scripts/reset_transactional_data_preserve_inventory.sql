@@ -18,6 +18,7 @@
 --   - productos asociados al contrato
 --   - cuotas, pagos, cargos, eventos financieros
 --   - cuotas y pagos de mantenimiento
+--   - referidos, beneficios y aplicaciones de beneficios
 --   - logs de edicion/anulacion de contratos
 --
 -- Importante:
@@ -39,9 +40,13 @@ WHERE estado <> 'DISPONIBLE'
    OR id_contrato_producto IS NOT NULL;
 
 DELETE FROM public.contrato_mantenimiento_pago_aplicacion;
+DELETE FROM public.referido_beneficio_aplicacion;
 DELETE FROM public.contrato_pago_aplicacion;
 
 DELETE FROM public.contrato_evento_financiero;
+DELETE FROM public.referido_evento;
+DELETE FROM public.referido_beneficio;
+DELETE FROM public.referido;
 DELETE FROM public.contrato_mantenimiento_pago;
 DELETE FROM public.contrato_mantenimiento_cuota;
 DELETE FROM public.contrato_pago;
@@ -77,6 +82,10 @@ ALTER SEQUENCE IF EXISTS public.contrato_evento_financiero_id_evento_seq RESTART
 ALTER SEQUENCE IF EXISTS public.contrato_mantenimiento_cuota_id_cuota_mantenimiento_seq RESTART WITH 1;
 ALTER SEQUENCE IF EXISTS public.contrato_mantenimiento_pago_id_pago_mantenimiento_seq RESTART WITH 1;
 ALTER SEQUENCE IF EXISTS public.contrato_mantenimiento_pago_aplicacion_id_aplicacion_mantenimiento_seq RESTART WITH 1;
+ALTER SEQUENCE IF EXISTS public.referido_id_referido_seq RESTART WITH 1;
+ALTER SEQUENCE IF EXISTS public.referido_beneficio_id_beneficio_seq RESTART WITH 1;
+ALTER SEQUENCE IF EXISTS public.referido_beneficio_aplicacion_id_aplicacion_seq RESTART WITH 1;
+ALTER SEQUENCE IF EXISTS public.referido_evento_id_evento_seq RESTART WITH 1;
 ALTER SEQUENCE IF EXISTS public.precontrato_numero_formulario_seq RESTART WITH 1;
 
 COMMIT;
@@ -87,6 +96,8 @@ SELECT
   (SELECT COUNT(*) FROM public.contrato_producto) AS productos_contrato_restantes,
   (SELECT COUNT(*) FROM public.contrato_pago) AS pagos_contrato_restantes,
   (SELECT COUNT(*) FROM public.contrato_mantenimiento_pago) AS pagos_mantenimiento_restantes,
+  (SELECT COUNT(*) FROM public.referido) AS referidos_restantes,
+  (SELECT COUNT(*) FROM public.referido_beneficio) AS beneficios_referido_restantes,
   (SELECT COUNT(*) FROM public.jardin) AS jardines_preservados,
   (SELECT COUNT(*) FROM public.lote) AS lotes_preservados,
   (SELECT COUNT(*) FROM public.tipo_cenizario) AS cenizarios_preservados,

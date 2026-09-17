@@ -7,7 +7,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { useNavigate } from "react-router-dom";
-import { Eye, FileText, Trees } from "lucide-react";
+import { Eye, FileText, Trees, UserRoundPlus } from "lucide-react";
 
 const VendedorHome = () => {
   const navigate = useNavigate();
@@ -25,6 +25,34 @@ const VendedorHome = () => {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <Card
+            className="relative flex h-full flex-col overflow-hidden rounded-xl border border-primary/10 bg-gradient-to-br from-white/5 to-primary/5 shadow-md hover:shadow-xl hover:-translate-y-1 transition-all duration-200 before:absolute before:inset-x-0 before:top-0 before:h-1 before:bg-primary/60 before:opacity-70 cursor-pointer"
+            onClick={() => navigate("/referidos")}
+          >
+            <CardHeader>
+              <div className="flex items-center gap-3">
+                <div className="rounded-lg bg-primary/10 p-3">
+                  <UserRoundPlus className="h-6 w-6 text-primary" />
+                </div>
+                <div>
+                  <CardTitle>Referidos</CardTitle>
+                  <CardDescription>Registrar y dar seguimiento a prospectos</CardDescription>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="flex flex-1 flex-col">
+              <p className="text-sm text-muted-foreground flex-1">
+                Registra los datos suministrados por clientes con contratos vigentes.
+              </p>
+              <Button
+                className="w-full mt-auto"
+                onClick={() => navigate("/referidos")}
+              >
+                Gestionar referidos
+              </Button>
+            </CardContent>
+          </Card>
+
           <Card
             className="relative flex h-full flex-col overflow-hidden rounded-xl border border-primary/10 bg-gradient-to-br from-white/5 to-primary/5 shadow-md hover:shadow-xl hover:-translate-y-1 transition-all duration-200 before:absolute before:inset-x-0 before:top-0 before:h-1 before:bg-primary/60 before:opacity-70 cursor-pointer"
             onClick={() => navigate("/precontratos")}

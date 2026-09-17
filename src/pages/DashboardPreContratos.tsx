@@ -1099,6 +1099,13 @@ export default function DashboardPreContratos() {
         cuotasGeneradas > 0
           ? `Precontrato formalizado, carpeta creada en ${categoryName} y plan de pago generado (${cuotasGeneradas} cuotas).`
           : `Precontrato formalizado y carpeta creada en ${categoryName}.`,
+        {
+          description: "El cliente ya puede registrar posibles clientes referidos.",
+          action: {
+            label: "Registrar referidos",
+            onClick: () => navigate(`/referidos?contrato=${idContrato}`),
+          },
+        },
       );
       setFormalizeTarget(null);
       setFormalizeNumeroFormulario("");

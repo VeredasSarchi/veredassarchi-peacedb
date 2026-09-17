@@ -26,6 +26,7 @@ import {
   History,
   Trash2,
   User,
+  UserRoundPlus,
   Users,
 } from "lucide-react";
 import { useAuth } from "@/auth/AuthContext";
@@ -2057,6 +2058,16 @@ export default function DashboardContratosActivos() {
                                 </div>
                               </div>
                               <div className="flex flex-wrap items-center gap-2">
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() =>
+                                    navigate(`/referidos?contrato=${item.contrato.id_contrato}`)
+                                  }
+                                >
+                                  <UserRoundPlus className="h-4 w-4" />
+                                  Referidos
+                                </Button>
                                 <Button
                                   size="sm"
                                   onClick={() => void inspectContractFolder(item)}
