@@ -32,6 +32,7 @@ type DeleteUserResponse = {
 
 type CreateUserInput = {
   email: string;
+  nombreCompleto?: string;
   password: string;
   role: AdminUserRole;
 };

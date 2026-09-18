@@ -256,8 +256,8 @@ function getPaymentPlanPrecheckError(record: PreContratoDetalle): string | null 
       ? record.contrato.plazo_anios * 12
       : null);
 
-  if (plazoMeses !== null && plazoMeses !== undefined) {
-    return plazoMeses >= 0 ? null : "El contrato tiene un plazo inválido para generar el plan de pago";
+  if (plazoMeses !== null && plazoMeses !== undefined && plazoMeses < 0) {
+    return "El contrato tiene un plazo inválido para generar el plan de pago";
   }
 
   const prima = record.contrato.monto_entregado_inicial ?? 0;
@@ -265,6 +265,12 @@ function getPaymentPlanPrecheckError(record: PreContratoDetalle): string | null 
     record.contrato.saldo_pendiente ?? ((record.contrato.monto_arrendamiento_total ?? 0) - prima),
     0,
   );
+  if (plazoMeses === 0 && saldoEstimado > 0) {
+    return "El contrato tiene saldo pendiente, pero el plazo registrado es 0 meses";
+  }
+  if (plazoMeses !== null && plazoMeses !== undefined) {
+    return null;
+  }
   const cuotaMensual = record.contrato.cuota_mensual ?? 0;
   const tasaMensual = (record.contrato.tasa_interes_anual ?? 0) / 100 / 12;
 
@@ -289,6 +295,26 @@ function isMissingNumeroFormularioColumn(error: unknown): boolean {
       ? String((error as { message?: unknown }).message || "")
       : "";
   return message.toLowerCase().includes("numero_formulario");
+}
+
+function getSupabaseErrorMessage(error: unknown, fallback: string): string {
+  if (error instanceof Error && error.message.trim()) {
+    return error.message;
+  }
+
+  if (typeof error === "object" && error !== null) {
+    const details = error as {
+      message?: unknown;
+      details?: unknown;
+      hint?: unknown;
+    };
+    const message = [details.message, details.details, details.hint]
+      .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+      .join(" ");
+    if (message) return message;
+  }
+
+  return fallback;
 }
 
 function getProductoLabel(producto: ProductoDetalle): string {
@@ -1087,7 +1113,7 @@ export default function DashboardPreContratos() {
           toast.error("Ya existe otro contrato con ese número de formulario");
           return;
         }
-        throw error;
+        throw new Error(getSupabaseErrorMessage(error, "No se pudo formalizar el precontrato"));
       }
 
       const formalizeResult = asSingle(
@@ -1115,7 +1141,7 @@ export default function DashboardPreContratos() {
       await loadPrecontratos();
     } catch (error) {
       console.error("Error formalizando precontrato:", error);
-      toast.error(error instanceof Error ? error.message : "No se pudo formalizar el precontrato");
+      toast.error(getSupabaseErrorMessage(error, "No se pudo formalizar el precontrato"));
     } finally {
       setProcessingId(null);
     }

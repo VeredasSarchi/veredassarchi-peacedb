@@ -25,6 +25,7 @@ type RequestPayload = {
   action?: AdminAction;
   userId?: string;
   email?: string;
+  nombreCompleto?: string;
   confirmationEmail?: string;
   password?: string;
   role?: ManagedRole;
@@ -65,6 +66,14 @@ function normalizeEmail(value: unknown): string {
     throw new HttpError(400, "Debes indicar un correo electronico valido");
   }
   return email;
+}
+
+function normalizeFullName(value: unknown): string {
+  const name = typeof value === "string" ? value.trim().replace(/\s+/g, " ") : "";
+  if (name.length < 2 || name.length > 150) {
+    throw new HttpError(400, "Debes indicar un nombre completo entre 2 y 150 caracteres");
+  }
+  return name;
 }
 
 function validatePassword(value: unknown, required: boolean): string | undefined {
@@ -319,6 +328,7 @@ async function handleCreate(
   const email = normalizeEmail(payload.email);
   const password = validatePassword(payload.password, true) as string;
   const role = validateRole(payload.role);
+  const nombreCompleto = role === "vendedor" ? normalizeFullName(payload.nombreCompleto) : null;
   const operationId = crypto.randomUUID();
 
   await writeAudit(
@@ -356,6 +366,29 @@ async function handleCreate(
       errorDetail: "Supabase Auth rechazo la creacion del usuario",
     });
     throwAuthOperationError(error ?? {}, "No se pudo crear el usuario");
+  }
+
+  if (nombreCompleto) {
+    const { data: vendedor, error: vendedorError } = await supabaseAdmin
+      .from("vendedor")
+      .insert({ nombre_completo: nombreCompleto })
+      .select("id_vendedor")
+      .single();
+
+    if (vendedorError || !vendedor) {
+      await supabaseAdmin.auth.admin.deleteUser(data.user.id);
+      throw new HttpError(500, "No se pudo crear el vendedor comercial");
+    }
+
+    const { error: associationError } = await supabaseAdmin
+      .from("vendedor_usuario_referidos")
+      .insert({ id_vendedor: vendedor.id_vendedor, id_usuario: data.user.id, asociado_por: actor.id });
+
+    if (associationError) {
+      await supabaseAdmin.from("vendedor").delete().eq("id_vendedor", vendedor.id_vendedor);
+      await supabaseAdmin.auth.admin.deleteUser(data.user.id);
+      throw new HttpError(500, "No se pudo asociar el vendedor con la cuenta");
+    }
   }
 
   await writeAudit(supabaseAdmin, {

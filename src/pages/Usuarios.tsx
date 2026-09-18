@@ -75,6 +75,7 @@ type AsociacionVendedor = { id_vendedor: number; id_usuario: string };
 
 type UserFormState = {
   email: string;
+  nombreCompleto: string;
   role: AdminUserRole | "";
   password: string;
   passwordConfirmation: string;
@@ -82,6 +83,7 @@ type UserFormState = {
 
 const emptyForm: UserFormState = {
   email: "",
+  nombreCompleto: "",
   role: "",
   password: "",
   passwordConfirmation: "",
@@ -196,6 +198,7 @@ export default function Usuarios() {
     setEditingUser(selectedUser);
     setForm({
       email: selectedUser.email,
+      nombreCompleto: "",
       role: selectedUser.role ?? "",
       password: "",
       passwordConfirmation: "",
@@ -249,6 +252,11 @@ export default function Usuarios() {
       return;
     }
 
+    if (!editingUser && form.role === "vendedor" && !form.nombreCompleto.trim()) {
+      toast.error("El nombre completo del vendedor es obligatorio");
+      return;
+    }
+
     if (!editingUser && form.password.length < 8) {
       toast.error("La contrasena inicial debe tener al menos 8 caracteres");
       return;
@@ -288,6 +296,7 @@ export default function Usuarios() {
       } else {
         const createdUser = await createManagedUser({
           email,
+          nombreCompleto: form.nombreCompleto.trim(),
           password: form.password,
           role: form.role,
         });
@@ -598,6 +607,22 @@ export default function Usuarios() {
                 </p>
               )}
             </div>
+
+            {!editingUser && form.role === "vendedor" && (
+              <div className="space-y-2 sm:col-span-2">
+                <Label htmlFor="usuario-nombre-completo">Nombre completo del vendedor</Label>
+                <Input
+                  id="usuario-nombre-completo"
+                  value={form.nombreCompleto}
+                  onChange={(event) =>
+                    setForm((current) => ({ ...current, nombreCompleto: event.target.value }))
+                  }
+                  placeholder="Nombre y apellidos"
+                  maxLength={150}
+                  disabled={saving}
+                />
+              </div>
+            )}
 
             <div className="space-y-2">
               <Label htmlFor="usuario-password">
