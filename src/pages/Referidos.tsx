@@ -334,9 +334,7 @@ export default function Referidos() {
     const targetPhone = normalizePhone(linkTarget.telefono);
     const targetEmail = normalizeEmail(linkTarget.email);
     return panel.precontratos.filter((item) => {
-      const phoneMatches =
-        normalizePhone(item.telefono1) === targetPhone ||
-        normalizePhone(item.telefono2) === targetPhone;
+      const phoneMatches = normalizePhone(item.telefono1) === targetPhone;
       const emailMatches = Boolean(targetEmail) && normalizeEmail(item.email) === targetEmail;
       return phoneMatches || emailMatches || item.id_referido_actual === linkTarget.id_referido;
     });
