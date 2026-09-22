@@ -4,6 +4,7 @@ import {
   ArrowLeft,
   BadgeCheck,
   CircleDollarSign,
+  Clock3,
   Gift,
   Link2,
   Loader2,
@@ -58,7 +59,8 @@ type ReferidoEstado =
   | "VINCULADO"
   | "CONVERTIDO"
   | "DESCARTADO"
-  | "INUTILIZABLE";
+  | "INUTILIZABLE"
+  | "EXPIRADO";
 
 type ReferidoRow = {
   id_referido: number;
@@ -69,6 +71,9 @@ type ReferidoRow = {
   observaciones: string | null;
   motivo_inutilizacion: string | null;
   created_at: string;
+  fecha_vencimiento: string;
+  vigente_para_beneficio: boolean;
+  estado_efectivo: ReferidoEstado;
   fecha_conversion: string | null;
   id_cliente_referente: number;
   cliente_referente_nombre: string;
@@ -138,6 +143,7 @@ type ReferidosPanel = {
   resumen: {
     total: number;
     en_gestion: number;
+    expirados: number;
     convertidos: number;
     beneficios_disponibles: number;
     clientes_elegibles_placa: number;
@@ -156,6 +162,7 @@ const emptyPanel: ReferidosPanel = {
   resumen: {
     total: 0,
     en_gestion: 0,
+    expirados: 0,
     convertidos: 0,
     beneficios_disponibles: 0,
     clientes_elegibles_placa: 0,
@@ -175,6 +182,7 @@ const statusLabels: Record<ReferidoEstado, string> = {
   CONVERTIDO: "Convertido",
   DESCARTADO: "Descartado",
   INUTILIZABLE: "Inutilizable",
+  EXPIRADO: "Expirado",
 };
 
 const statusClasses: Record<ReferidoEstado, string> = {
@@ -184,6 +192,7 @@ const statusClasses: Record<ReferidoEstado, string> = {
   CONVERTIDO: "bg-emerald-100 text-emerald-800 hover:bg-emerald-100",
   DESCARTADO: "bg-slate-100 text-slate-700 hover:bg-slate-100",
   INUTILIZABLE: "bg-rose-100 text-rose-800 hover:bg-rose-100",
+  EXPIRADO: "bg-orange-100 text-orange-800 hover:bg-orange-100",
 };
 
 function formatCurrency(value: number | null | undefined): string {
@@ -199,6 +208,16 @@ function formatDate(value: string | null | undefined): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "Sin registro";
   return new Intl.DateTimeFormat("es-CR", { dateStyle: "medium" }).format(date);
+}
+
+function formatReferralDeadline(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Sin registro";
+  return new Intl.DateTimeFormat("es-CR", {
+    dateStyle: "medium",
+    timeStyle: "short",
+    timeZone: "America/Costa_Rica",
+  }).format(date);
 }
 
 function contractLabel(number: string | null, id: number): string {
@@ -303,7 +322,7 @@ export default function Referidos() {
         (item.email ?? "").toLowerCase().includes(query) ||
         item.cliente_referente_nombre.toLowerCase().includes(query) ||
         item.vendedor_responsable_nombre.toLowerCase().includes(query);
-      const matchesStatus = statusFilter === "TODOS" || item.estado === statusFilter;
+      const matchesStatus = statusFilter === "TODOS" || item.estado_efectivo === statusFilter;
       const matchesSeller =
         sellerFilter === "TODOS" || String(item.id_vendedor_responsable) === sellerFilter;
       return matchesSearch && matchesStatus && matchesSeller;
@@ -369,7 +388,7 @@ export default function Referidos() {
       const result = data as { duplicados_detectados?: number } | null;
       if (Number(result?.duplicados_detectados ?? 0) > 0) {
         toast.warning(
-          "Referido registrado. Hay otras atribuciones con el mismo teléfono o correo; administración decidirá cuál utilizar.",
+          "Referido registrado. Hay otros registros con el mismo teléfono o correo; administración revisará su vigencia antes de atribuir una venta.",
         );
       } else {
         toast.success("Referido registrado correctamente");
@@ -499,7 +518,7 @@ export default function Referidos() {
           <div>
             <h1 className="mb-2 text-2xl font-bold text-primary sm:text-3xl">Referidos</h1>
             <p className="max-w-3xl text-muted-foreground">
-              Prospectos recomendados por clientes, ventas convertidas y beneficios aplicables a mantenimiento.
+              Prospectos recomendados por clientes, ventas convertidas y beneficios aplicables a mantenimiento. La venta debe formalizarse dentro de un año desde el registro del referido.
             </p>
           </div>
           <div className="flex w-full flex-wrap gap-2 sm:w-auto">
@@ -529,10 +548,11 @@ export default function Referidos() {
           </div>
         )}
 
-        <div className="mb-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+        <div className="mb-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
           {[
             { label: "Referidos", value: panel.resumen.total, icon: UsersRound },
             { label: "En seguimiento", value: panel.resumen.en_gestion, icon: UserRoundPlus },
+            { label: "Expirados", value: panel.resumen.expirados, icon: Clock3 },
             { label: "Ventas logradas", value: panel.resumen.convertidos, icon: BadgeCheck },
             { label: "Beneficios con saldo", value: panel.resumen.beneficios_disponibles, icon: CircleDollarSign },
             { label: "Elegibles para placa", value: panel.resumen.clientes_elegibles_placa, icon: Gift },
@@ -614,7 +634,7 @@ export default function Referidos() {
                   <TableBody>
                     {filteredRows.map((item) => {
                       const plate = plateByClient.get(item.id_cliente_referente);
-                      const canLink = ["REGISTRADO", "EN_GESTION", "VINCULADO"].includes(item.estado);
+                      const canLink = item.vigente_para_beneficio;
                       const canApply =
                         Boolean(item.id_beneficio) &&
                         Number(item.monto_disponible ?? 0) > 0 &&
@@ -624,13 +644,18 @@ export default function Referidos() {
                           <TableCell className="min-w-64">
                             <div className="flex flex-wrap items-center gap-2">
                               <p className="font-semibold">{item.nombre}</p>
-                              <Badge className={statusClasses[item.estado]}>{statusLabels[item.estado]}</Badge>
+                              <Badge className={statusClasses[item.estado_efectivo]}>{statusLabels[item.estado_efectivo]}</Badge>
                               {item.duplicados_activos > 0 && (
                                 <Badge variant="destructive">{item.duplicados_activos} duplicado(s)</Badge>
                               )}
                             </div>
                             <p className="mt-1 text-sm text-muted-foreground">{item.telefono}</p>
                             {item.email && <p className="text-sm text-muted-foreground">{item.email}</p>}
+                            {["REGISTRADO", "EN_GESTION", "VINCULADO"].includes(item.estado) && (
+                              <p className={`mt-1 text-xs ${item.estado_efectivo === "EXPIRADO" ? "text-orange-800" : "text-muted-foreground"}`}>
+                                {item.estado_efectivo === "EXPIRADO" ? "Expiró" : "Vigente hasta"} {formatReferralDeadline(item.fecha_vencimiento)} (Costa Rica)
+                              </p>
+                            )}
                             {item.motivo_inutilizacion && (
                               <p className="mt-2 text-xs text-destructive">{item.motivo_inutilizacion}</p>
                             )}
@@ -706,12 +731,12 @@ export default function Referidos() {
                                     Desvincular
                                   </Button>
                                 )}
-                              {isAdmin && item.estado === "REGISTRADO" && (
+                              {isAdmin && item.vigente_para_beneficio && item.estado === "REGISTRADO" && (
                                 <Button size="sm" variant="secondary" onClick={() => void handleStatus(item, "EN_GESTION")} disabled={processing}>
                                   Iniciar gestión
                                 </Button>
                               )}
-                              {isAdmin && ["REGISTRADO", "EN_GESTION"].includes(item.estado) && (
+                              {isAdmin && item.vigente_para_beneficio && ["REGISTRADO", "EN_GESTION"].includes(item.estado) && (
                                 <Button size="sm" variant="ghost" onClick={() => void handleStatus(item, "DESCARTADO")} disabled={processing}>
                                   Descartar
                                 </Button>
