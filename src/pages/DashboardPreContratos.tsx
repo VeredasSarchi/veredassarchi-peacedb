@@ -63,6 +63,7 @@ import type { ProductType } from "@/components/precontratos/PreClienteForm";
 import { buildOneDriveFolderPayload } from "@/lib/contract-onedrive";
 import { formatContractDisplayLabel } from "@/lib/contract-display";
 import { getMaintenanceBaseFromVatIncludedTotal } from "@/lib/maintenance-vat";
+import { formatCalendarDate, parseCalendarDate } from "@/lib/calendar-date";
 import { cn } from "@/lib/utils";
 
 type ContratoRow = Tables<"contrato"> & {
@@ -215,7 +216,7 @@ function formatMaintenanceStartDisplay(
   anioInicioMantenimiento: number | null | undefined,
 ): string {
   if (fechaInicioMantenimiento) {
-    return formatDate(fechaInicioMantenimiento);
+    return formatCalendarDate(fechaInicioMantenimiento);
   }
 
   if (anioInicioMantenimiento) {
@@ -237,8 +238,8 @@ function getSuggestedFirstPaymentDate(
     return "";
   }
 
-  const parsed = new Date(fechaFirma);
-  if (Number.isNaN(parsed.getTime())) {
+  const parsed = parseCalendarDate(fechaFirma);
+  if (!parsed) {
     return "";
   }
 
@@ -339,13 +340,6 @@ function getProductoLabel(producto: ProductoDetalle): string {
       : "Paquete funerario";
   }
   return "Paquete funerario";
-}
-
-function formatDate(value: string | null): string {
-  if (!value) return "Sin fecha";
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return value;
-  return parsed.toLocaleString("es-CR");
 }
 
 function displayValue(value: string | number | null | undefined, fallback = "No definido"): string {
@@ -1300,7 +1294,7 @@ export default function DashboardPreContratos() {
                                   <h2 className="break-words text-2xl font-bold text-text-primary">{precontractTitle}</h2>
                                   <p className="mt-1 line-clamp-2 text-sm text-text-secondary">
                                     {displayValue(item.cliente?.nombre_completo, "Cliente no registrado")} - Firma:{" "}
-                                    {formatDate(item.contrato.fecha_firma)}
+                                    {formatCalendarDate(item.contrato.fecha_firma)}
                                   </p>
                                 </div>
                               </div>
@@ -1366,7 +1360,7 @@ export default function DashboardPreContratos() {
                                 description="Condiciones operativas que se convertirán en contrato vigente."
                               >
                                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                                  <InfoLine icon={Calendar} label="Fecha de firma" value={formatDate(item.contrato.fecha_firma)} />
+                                  <InfoLine icon={Calendar} label="Fecha de firma" value={formatCalendarDate(item.contrato.fecha_firma)} />
                                   <InfoLine label="Plazo" value={plazoContrato} />
                                   <InfoLine label="Dia de pago" value={diaPago} />
                                   <InfoLine

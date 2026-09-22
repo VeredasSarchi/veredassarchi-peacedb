@@ -13,6 +13,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
+import { formatCalendarDate } from "@/lib/calendar-date";
 import type { Tables } from "@/integrations/supabase/types";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -118,13 +119,6 @@ function dedupePaquetesByDescripcion(items: PaqueteFunerario[]): PaqueteFunerari
   return Array.from(uniqueByName.values()).sort((a, b) =>
     a.descripcion.localeCompare(b.descripcion, "es")
   );
-}
-
-function formatDate(value: string | null): string {
-  if (!value) return "Sin fecha";
-  const parsed = new Date(`${value}T00:00:00`);
-  if (Number.isNaN(parsed.getTime())) return value;
-  return parsed.toLocaleDateString("es-CR");
 }
 
 function isFormalizedState(value: Tables<"contrato">["estado_contrato"] | null | undefined): boolean {
@@ -628,7 +622,7 @@ export default function PaquetesFunerarios() {
                     <div>
                       <p className="text-sm font-medium text-card-foreground">{clienteFolder.folderName}</p>
                       <p className="text-xs text-muted-foreground">
-                        Contrato #{clienteFolder.contractId} - Fecha: {formatDate(clienteFolder.fechaFirma)}
+                        Contrato #{clienteFolder.contractId} - Fecha: {formatCalendarDate(clienteFolder.fechaFirma)}
                       </p>
                     </div>
                   </div>

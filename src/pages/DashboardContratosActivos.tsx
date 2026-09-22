@@ -77,6 +77,7 @@ import {
 import { formatContractDisplayLabel } from "@/lib/contract-display";
 import { buildOneDriveFolderPayload, type OneDriveFolderPayload } from "@/lib/contract-onedrive";
 import { renameContractFolderAsCancelled } from "@/lib/onedrive-service";
+import { formatCalendarDate } from "@/lib/calendar-date";
 import { cn } from "@/lib/utils";
 
 type OneDriveValidationFields = {
@@ -589,7 +590,7 @@ function getProductoLabel(producto: ProductoDetalle): string {
   return "Producto";
 }
 
-function formatDate(value: string | null): string {
+function formatDateTime(value: string | null): string {
   if (!value) return "Sin fecha";
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return value;
@@ -601,11 +602,7 @@ function formatMaintenanceStartDisplay(
   anioInicioMantenimiento: number | null | undefined,
 ): string {
   if (fechaInicioMantenimiento) {
-    const parsed = new Date(`${fechaInicioMantenimiento}T00:00:00`);
-    if (!Number.isNaN(parsed.getTime())) {
-      return parsed.toLocaleDateString("es-CR");
-    }
-    return fechaInicioMantenimiento;
+    return formatCalendarDate(fechaInicioMantenimiento);
   }
 
   if (anioInicioMantenimiento) {
@@ -2053,7 +2050,7 @@ export default function DashboardContratosActivos() {
                                   <h2 className="break-words text-2xl font-bold text-text-primary">{contractTitle}</h2>
                                   <p className="mt-1 line-clamp-2 text-sm text-text-secondary">
                                     {displayValue(item.cliente?.nombre_completo, "Cliente no registrado")} - Firma:{" "}
-                                    {formatDate(item.contrato.fecha_firma)}
+                                    {formatCalendarDate(item.contrato.fecha_firma)}
                                   </p>
                                 </div>
                               </div>
@@ -2150,7 +2147,7 @@ export default function DashboardContratosActivos() {
                                 description="Condiciones operativas y datos de seguimiento."
                               >
                                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                                  <InfoLine icon={Calendar} label="Fecha de firma" value={formatDate(item.contrato.fecha_firma)} />
+                                  <InfoLine icon={Calendar} label="Fecha de firma" value={formatCalendarDate(item.contrato.fecha_firma)} />
                                   <InfoLine
                                     label="Plazo actual"
                                     value={plazoContrato}
@@ -2228,7 +2225,7 @@ export default function DashboardContratosActivos() {
                                     label="Ultimo pago extraordinario"
                                     value={`${formatCurrency(
                                       item.resumenFinanciero.ultimoExtraordinario.monto,
-                                    )} - ${formatDate(
+                                    )} - ${formatCalendarDate(
                                       item.resumenFinanciero.ultimoExtraordinario.fechaPago,
                                     )}`}
                                     highlight
@@ -2466,7 +2463,7 @@ export default function DashboardContratosActivos() {
                                             <div>
                                               <p className="text-sm text-card-foreground">{fileItem.name || "Archivo"}</p>
                                               <p className="text-xs text-muted-foreground">
-                                                {formatFileSize(fileItem.size)} - {formatDate(fileItem.lastModifiedDateTime)}
+                                                {formatFileSize(fileItem.size)} - {formatDateTime(fileItem.lastModifiedDateTime)}
                                               </p>
                                             </div>
                                           </div>
@@ -2519,7 +2516,7 @@ export default function DashboardContratosActivos() {
                                               <p className="text-xs text-muted-foreground">
                                                 {folderItem.isFolder
                                                   ? "Carpeta"
-                                                  : `${formatFileSize(folderItem.size)} - ${formatDate(folderItem.lastModifiedDateTime)}`}
+                                                  : `${formatFileSize(folderItem.size)} - ${formatDateTime(folderItem.lastModifiedDateTime)}`}
                                               </p>
                                             </div>
                                           </div>
@@ -2859,7 +2856,7 @@ export default function DashboardContratosActivos() {
                 return (
                   <div key={log.id_log} className="rounded-md border border-border/70 bg-muted/20 px-3 py-3">
                     <p className="text-sm font-semibold text-card-foreground">
-                      {formatDate(log.fecha)} - {log.usuario || "Usuario no registrado"}
+                      {formatDateTime(log.fecha)} - {log.usuario || "Usuario no registrado"}
                     </p>
                     <p className="text-xs text-muted-foreground">{log.resumen}</p>
                     {details.length > 0 && (

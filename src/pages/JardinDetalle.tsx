@@ -29,6 +29,7 @@ import {
 } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useAuth } from "@/auth/AuthContext";
+import { toLocalCalendarDateValue } from "@/lib/calendar-date";
 
 type Jardin = Tables<"jardin">;
 type Lote = Tables<"lote">;
@@ -608,7 +609,7 @@ export default function JardinDetalle() {
           numero_espacio: space.numero_espacio,
           estado: occupied ? "OCUPADO" : "DISPONIBLE",
           nombre_ocupante: occupied ? draft.nombre.trim() : null,
-          fecha_ocupacion: occupied ? new Date().toISOString() : null,
+          fecha_ocupacion: occupied ? toLocalCalendarDateValue() : null,
           id_contrato_producto: space.id_contrato_producto ?? null,
         });
         return acc;
