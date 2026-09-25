@@ -594,6 +594,19 @@ export default function DashboardPreContratos() {
   const loadPrecontratos = useCallback(async () => {
     setLoading(true);
     try {
+      const { data: idsData, error: idsError } = await supabase.rpc(
+        "obtener_ids_precontratos_visibles",
+      );
+      if (idsError) throw idsError;
+
+      const visibleContractIds = Array.isArray(idsData)
+        ? idsData.filter((id): id is number => typeof id === "number")
+        : [];
+      if (visibleContractIds.length === 0) {
+        setPrecontratos([]);
+        return;
+      }
+
       const contratoSelectBase = `
           id_contrato,
           numero_contrato,
@@ -647,6 +660,7 @@ export default function DashboardPreContratos() {
           .from("contrato")
           .select(selectedColumns)
           .eq("estado_contrato", "PRECONTRATO")
+          .in("id_contrato", visibleContractIds)
           .order("id_contrato", { ascending: false });
 
         return {
@@ -806,7 +820,7 @@ export default function DashboardPreContratos() {
       setPrecontratos(detallados);
     } catch (error) {
       console.error("Error cargando precontratos:", error);
-      toast.error("No se pudieron cargar los precontratos");
+      toast.error(getSupabaseErrorMessage(error, "No se pudieron cargar los precontratos"));
     } finally {
       setLoading(false);
     }

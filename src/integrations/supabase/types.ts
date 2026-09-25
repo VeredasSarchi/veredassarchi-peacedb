@@ -2473,6 +2473,7 @@ export type Database = {
         Returns: string
       }
       obtener_panel_referidos: { Args: never; Returns: Json }
+      obtener_ids_precontratos_visibles: { Args: never; Returns: Json }
       obtener_creditos_referidos_mantenimiento: {
         Args: { p_id_contrato: number }
         Returns: Json

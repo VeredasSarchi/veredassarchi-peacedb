@@ -130,7 +130,7 @@ const VendedorHome = () => {
             </CardHeader>
             <CardContent className="flex flex-1 flex-col">
               <p className="text-sm text-muted-foreground flex-1">
-                Visualiza todos los precontratos en modo lectura, sin editar ni formalizar.
+                Visualiza tus precontratos asignados en modo lectura, sin editar ni formalizar.
               </p>
               <Button
                 className="w-full mt-auto"
