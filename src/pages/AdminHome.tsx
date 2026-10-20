@@ -31,7 +31,7 @@ const AdminHome = () => {
       <div className="app-page-content">
         <div className="mb-8">
           <h1 className="mb-2 text-3xl font-bold text-primary sm:text-4xl">
-            Veredas Sarchi-Poás
+            Veredas Sarchí
           </h1>
           <p className="text-base text-text-secondary sm:text-xl">
             Sistema de Gestion Integral

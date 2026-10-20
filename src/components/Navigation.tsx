@@ -26,7 +26,7 @@ export default function Navigation() {
             to={homePath}
             className="min-w-0 truncate rounded-md px-1 py-2 text-sm font-bold tracking-tight outline-none ring-ring focus-visible:ring-2 sm:text-base"
           >
-            Veredas Sarchí - Poás
+            Veredas Sarchí
           </Link>
           <Button asChild size="sm" variant="ghost" className="shrink-0 px-2 sm:px-3">
             <Link to={homePath}>
