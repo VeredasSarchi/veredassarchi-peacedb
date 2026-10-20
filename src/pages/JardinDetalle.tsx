@@ -206,7 +206,7 @@ export default function JardinDetalle() {
         .from("lote")
         .select("*")
         .eq("id_jardin", gardenId)
-        .order("numero_lote", { ascending: true });
+        .order("id_lote", { ascending: true });
 
       if (lotesError) {
         if (isMounted) {

@@ -575,10 +575,6 @@ export function PreClienteForm({
       grouped[rowKey].push(lote);
     });
 
-    Object.values(grouped).forEach((rowLots) => {
-      rowLots.sort((a, b) => a.numero_lote.localeCompare(b.numero_lote));
-    });
-
     return grouped;
   }, [lotesDelJardin]);
 
@@ -630,7 +626,7 @@ export function PreClienteForm({
           vendedoresRes,
         ] = await Promise.all([
           supabase.from("jardin").select("*").order("nombre"),
-          supabase.from("lote").select("*").order("numero_lote"),
+          supabase.from("lote").select("*").order("id_lote", { ascending: true }),
           supabase.from("tipo_lote").select("*").order("descripcion"),
           supabase.from("tipo_cenizario").select("*").order("numero_cenizario"),
           supabase.from("tipo_cremacion").select("*").order("descripcion"),
