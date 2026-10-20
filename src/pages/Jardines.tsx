@@ -73,24 +73,7 @@ export default function Jardines() {
         return;
       }
 
-      let gardensData = data ?? [];
-
-      if (gardensData.length === 0 && isAdmin) {
-        const { data: inserted, error: insertError } = await supabase
-          .from("jardin")
-          .insert({ nombre: "La Paz", filas_lote: 8 })
-          .select("*");
-
-        if (insertError) {
-          if (isMounted) {
-            setError("No se pudo crear el jardin inicial.");
-            setLoading(false);
-          }
-          return;
-        }
-
-        gardensData = inserted ?? [];
-      }
+      const gardensData = data ?? [];
 
       if (isMounted) {
         const gardenIds = new Set(gardensData.map((garden) => garden.id_jardin));
@@ -187,7 +170,7 @@ export default function Jardines() {
     return () => {
       isMounted = false;
     };
-  }, [isAdmin]);
+  }, []);
 
   async function handleCreateGarden() {
     if (!gardenName.trim()) {

@@ -145,7 +145,6 @@ export default function JardinDetalle() {
   >({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [isSimulated, setIsSimulated] = useState(false);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [formRow, setFormRow] = useState<string>("");
   const [formName, setFormName] = useState("");
@@ -330,7 +329,6 @@ export default function JardinDetalle() {
         setCenizarios(cenizariosData);
         setContractStatusByLot(contractMap);
         setContractStatusByCenizario(cenizarioContractMap);
-        setIsSimulated((lotesData ?? []).length === 0);
         setLoading(false);
       }
     }
@@ -364,30 +362,6 @@ export default function JardinDetalle() {
   );
 
   const lotesDisplay: LoteDisplay[] = useMemo(() => {
-    if (lots.length === 0) {
-      const rows = displayRowCount || 8;
-      const cols = 8;
-      const demoStatuses: LoteStatus[] = [
-        "available",
-        "precontract",
-        "contract",
-        "occupant",
-      ];
-      return Array.from({ length: rows * cols }, (_, index) => {
-        const row = Math.floor(index / cols) + 1;
-        const col = (index % cols) + 1;
-        const status = demoStatuses[index % demoStatuses.length];
-        return {
-          key: `sim-${index + 1}`,
-          label: `F${row}-L${String(col).padStart(2, "0")}`,
-          status,
-          row,
-          idLote: 0,
-          isFamiliar: index % demoStatuses.length === 0,
-        };
-      });
-    }
-
     return lots.map((lote, index) => {
       const match = (lote.numero_lote || "").match(/^F(\d+)-/i);
       const row = match ? Number(match[1]) : 1;
@@ -418,7 +392,7 @@ export default function JardinDetalle() {
         isFamiliar,
       };
     });
-  }, [lots, spaces, lotTypes, contractStatusByLot, displayRowCount]);
+  }, [lots, spaces, lotTypes, contractStatusByLot]);
 
   const cenizariosDisplay: CenizarioDisplay[] = useMemo(() => {
     return cenizarios.map((cenizario) => {
@@ -557,7 +531,6 @@ export default function JardinDetalle() {
       }
 
       setLots((prev) => [...prev, newLote]);
-      setIsSimulated(false);
     }
 
     setFormRow("");
@@ -780,16 +753,18 @@ export default function JardinDetalle() {
             <CardHeader>
               <CardTitle>Mapa de Lotes</CardTitle>
               <CardDescription>
-                {isSimulated
-                  ? "No hay lotes en la base de datos. Mostrando simulacion."
-                  : "Estados calculados por contrato, pre-contrato y ocupantes."}
+                Estados calculados por contrato, pre-contrato y ocupantes.
               </CardDescription>
             </CardHeader>
             <CardContent>
               {loading && <div className="text-sm text-muted-foreground">Cargando...</div>}
               {error && <div className="text-sm text-destructive">{error}</div>}
 
-              {!loading && !error && (
+              {!loading && !error && (lotesDisplay.length === 0 ? (
+                <div className="rounded-lg border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
+                  No hay lotes registrados en este jardin.
+                </div>
+              ) : (
                 <>
                   <div className="flex flex-wrap gap-4 mb-6 text-sm">
                     <div className="flex items-center gap-2">
@@ -871,7 +846,7 @@ export default function JardinDetalle() {
                     })}
                   </div>
                 </>
-              )}
+              ))}
             </CardContent>
           </Card>
 
