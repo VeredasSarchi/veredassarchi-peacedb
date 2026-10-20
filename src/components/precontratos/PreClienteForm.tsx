@@ -84,6 +84,8 @@ export type PreClienteFormValues = z.infer<typeof preClienteSchema>;
 type Jardin = Tables<"jardin">;
 type Lote = Tables<"lote">;
 type TipoLote = Tables<"tipo_lote">;
+
+const UNASSIGNED_ROW_KEY = "sin-fila";
 type TipoCenizario = Tables<"tipo_cenizario">;
 type TipoCremacion = Tables<"tipo_cremacion">;
 type PaqueteFunerario = Tables<"paquete_funerario">;
@@ -560,25 +562,33 @@ export function PreClienteForm({
   }, [cenizariosDelJardin, contractStatusByCenizario]);
 
   const lotesPorFila = useMemo(() => {
-    const grouped: Record<number, Lote[]> = {};
+    const grouped: Record<string, Lote[]> = {};
     lotesDelJardin.forEach((lote) => {
-      const match = (lote.numero_lote || "").match(/^F(\d+)-/i);
-      const row = match ? Number(match[1]) : 1;
-      if (!grouped[row]) {
-        grouped[row] = [];
+      const row = lote.numero_fila_lote;
+      const rowKey =
+        row !== null && Number.isInteger(row) && row > 0
+          ? String(row)
+          : UNASSIGNED_ROW_KEY;
+      if (!grouped[rowKey]) {
+        grouped[rowKey] = [];
       }
-      grouped[row].push(lote);
+      grouped[rowKey].push(lote);
     });
 
-    Object.keys(grouped).forEach((row) => {
-      grouped[Number(row)].sort((a, b) => a.numero_lote.localeCompare(b.numero_lote));
+    Object.values(grouped).forEach((rowLots) => {
+      rowLots.sort((a, b) => a.numero_lote.localeCompare(b.numero_lote));
     });
 
     return grouped;
   }, [lotesDelJardin]);
 
   const filasLotes = useMemo(
-    () => Object.keys(lotesPorFila).map(Number).sort((a, b) => a - b),
+    () =>
+      Object.keys(lotesPorFila).sort((a, b) => {
+        if (a === UNASSIGNED_ROW_KEY) return 1;
+        if (b === UNASSIGNED_ROW_KEY) return -1;
+        return Number(a) - Number(b);
+      }),
     [lotesPorFila]
   );
 
@@ -1560,8 +1570,8 @@ export function PreClienteForm({
                 ) : (
                   filasLotes.map((fila) => (
                     <div key={`fila-${fila}`} className="flex items-start gap-3">
-                      <div className="w-7 pt-2 text-xs font-bold text-text-secondary">
-                        F{fila}
+                      <div className="w-14 shrink-0 pt-2 text-xs font-bold text-text-secondary">
+                        {fila === UNASSIGNED_ROW_KEY ? "Sin fila" : `F${fila}`}
                       </div>
                       <div className="grid flex-1 grid-cols-3 gap-2 sm:grid-cols-5 md:grid-cols-8">
                         {(lotesPorFila[fila] ?? []).map((lote) => {

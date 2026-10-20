@@ -1925,18 +1925,21 @@ export type Database = {
           id_jardin: number
           id_lote: number
           id_tipo_lote: number
+          numero_fila_lote: number | null
           numero_lote: string
         }
         Insert: {
           id_jardin: number
           id_lote?: number
           id_tipo_lote: number
+          numero_fila_lote?: number | null
           numero_lote: string
         }
         Update: {
           id_jardin?: number
           id_lote?: number
           id_tipo_lote?: number
+          numero_fila_lote?: number | null
           numero_lote?: string
         }
         Relationships: [

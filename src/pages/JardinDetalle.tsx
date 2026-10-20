@@ -51,7 +51,7 @@ type LoteDisplay = {
   key: string;
   label: string;
   status: LoteStatus;
-  row: number;
+  row: number | null;
   idLote: number;
   isFamiliar: boolean;
 };
@@ -346,9 +346,11 @@ export default function JardinDetalle() {
       return 0;
     }
     return lots.reduce((max, lote) => {
-      const match = (lote.numero_lote || "").match(/^F(\d+)-/i);
-      const row = match ? Number(match[1]) : 1;
-      return Math.max(max, row || 1);
+      const row = lote.numero_fila_lote;
+      if (row === null || !Number.isInteger(row) || row < 1) {
+        return max;
+      }
+      return Math.max(max, row);
     }, 0);
   }, [lots]);
   const displayRowCount = Math.max(configuredRows, maxRowFromLots || 0);
@@ -363,8 +365,12 @@ export default function JardinDetalle() {
 
   const lotesDisplay: LoteDisplay[] = useMemo(() => {
     return lots.map((lote, index) => {
-      const match = (lote.numero_lote || "").match(/^F(\d+)-/i);
-      const row = match ? Number(match[1]) : 1;
+      const row =
+        lote.numero_fila_lote !== null &&
+        Number.isInteger(lote.numero_fila_lote) &&
+        lote.numero_fila_lote > 0
+          ? lote.numero_fila_lote
+          : null;
       const tipoLote = lotTypes.find((tipo) => tipo.id_tipo_lote === lote.id_tipo_lote);
       const isFamiliar =
         (tipoLote?.descripcion || "").toLowerCase().trim() === "familiar";
@@ -393,6 +399,14 @@ export default function JardinDetalle() {
       };
     });
   }, [lots, spaces, lotTypes, contractStatusByLot]);
+
+  const displayRowKeys = useMemo<(number | null)[]>(
+    () => [
+      ...displayRows,
+      ...(lotesDisplay.some((lote) => lote.row === null) ? [null] : []),
+    ],
+    [displayRows, lotesDisplay]
+  );
 
   const cenizariosDisplay: CenizarioDisplay[] = useMemo(() => {
     return cenizarios.map((cenizario) => {
@@ -450,7 +464,7 @@ export default function JardinDetalle() {
     const rowNumber = Number(formRow);
     const capacity = 2;
 
-    if (!Number.isFinite(rowNumber) || rowNumber < 1 || rowNumber > configuredRows) {
+    if (!Number.isInteger(rowNumber) || rowNumber < 1 || rowNumber > configuredRows) {
       setError(`La fila debe estar entre 1 y ${configuredRows}.`);
       return;
     }
@@ -459,7 +473,6 @@ export default function JardinDetalle() {
     setError(null);
 
     const normalizedName = formName.trim();
-    const numeroLote = `F${rowNumber}-${normalizedName}`;
 
     let tipo = lotTypes.find(
       (item) => item.descripcion === formType && item.cantidad_espacios === capacity
@@ -498,7 +511,8 @@ export default function JardinDetalle() {
       .insert({
         id_jardin: gardenId,
         id_tipo_lote: tipo.id_tipo_lote,
-        numero_lote: numeroLote,
+        numero_fila_lote: rowNumber,
+        numero_lote: normalizedName,
       })
       .select("*")
       .single();
@@ -790,12 +804,15 @@ export default function JardinDetalle() {
                   </div>
 
                   <div className="space-y-3">
-                  {displayRows.map((rowNumber) => {
+                  {displayRowKeys.map((rowNumber) => {
                       const rowItems = lotesDisplay.filter((lote) => lote.row === rowNumber);
                       return (
-                        <div key={`row-${rowNumber}`} className="flex items-start gap-3">
-                          <div className="w-8 text-xs font-semibold text-muted-foreground pt-2">
-                            F{rowNumber}
+                        <div
+                          key={rowNumber === null ? "row-unassigned" : `row-${rowNumber}`}
+                          className="flex items-start gap-3"
+                        >
+                          <div className="w-14 shrink-0 text-xs font-semibold text-muted-foreground pt-2">
+                            {rowNumber === null ? "Sin fila" : `F${rowNumber}`}
                           </div>
                           <div className="grid grid-cols-6 sm:grid-cols-8 md:grid-cols-10 gap-2 flex-1">
                             {rowItems.length === 0 ? (
@@ -960,7 +977,7 @@ export default function JardinDetalle() {
                 onChange={(event) => setFormName(event.target.value)}
               />
               <p className="text-xs text-muted-foreground">
-                Se guardara como F{formRow || "?"}-{formName || "NOMBRE"}.
+                Se guardara como {formName || "NOMBRE"} en la fila {formRow || "?"}.
               </p>
             </div>
 
