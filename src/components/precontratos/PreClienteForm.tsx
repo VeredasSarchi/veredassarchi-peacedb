@@ -36,6 +36,7 @@ import { calculateMaintenanceVat, MAINTENANCE_VAT_RATE } from "@/lib/maintenance
 import { PAYMENT_METHOD_OPTIONS } from "@/lib/payment-methods";
 import { toast } from "sonner";
 import { groupLotsByRows, type GardenRow } from "@/lib/garden-rows";
+import { fetchAllByIds, fetchAllPages } from "@/lib/supabase-pagination";
 
 const preClienteSchema = z.object({
   numero_formulario: z.string().optional(),
@@ -605,11 +606,15 @@ export function PreClienteForm({
           paquetesFunerariosRes,
           vendedoresRes,
         ] = await Promise.all([
-          supabase.from("jardin").select("*").order("nombre"),
-          supabase.from("jardin_fila").select("*").order("orden"),
-          supabase.from("lote").select("*").order("id_lote", { ascending: true }),
+          fetchAllPages((from, to) => supabase.from("jardin").select("*", { count: "exact" })
+            .order("nombre").order("id_jardin").range(from, to)),
+          fetchAllPages((from, to) => supabase.from("jardin_fila").select("*", { count: "exact" })
+            .order("orden").order("id_jardin_fila").range(from, to)),
+          fetchAllPages((from, to) => supabase.from("lote").select("*", { count: "exact" })
+            .order("id_lote", { ascending: true }).range(from, to)),
           supabase.from("tipo_lote").select("*").order("descripcion"),
-          supabase.from("tipo_cenizario").select("*").order("numero_cenizario"),
+          fetchAllPages((from, to) => supabase.from("tipo_cenizario").select("*", { count: "exact" })
+            .order("numero_cenizario").order("id_tipo_cenizario").range(from, to)),
           supabase.from("tipo_cremacion").select("*").order("descripcion"),
           supabase.from("paquete_funerario").select("*").order("descripcion"),
           supabase.from("vendedor").select("*").order("nombre_completo"),
@@ -721,20 +726,16 @@ export function PreClienteForm({
         const cenizarioIds = tiposCenizario.map((item) => item.id_tipo_cenizario);
 
         const [lotContracts, cenizarioContracts] = await Promise.all([
-          lotIds.length > 0
-            ? supabase
+          fetchAllByIds(lotIds, (ids, from, to) => supabase
                 .from("contrato_producto")
-                .select("id_lote, contrato:contrato(estado_contrato)")
+                .select("id_lote, contrato:contrato(estado_contrato)", { count: "exact" })
                 .eq("tipo_producto", "LOTE")
-                .in("id_lote", lotIds)
-            : Promise.resolve({ data: [], error: null }),
-          cenizarioIds.length > 0
-            ? supabase
+                .in("id_lote", ids).order("id_contrato_producto").range(from, to)),
+          fetchAllByIds(cenizarioIds, (ids, from, to) => supabase
                 .from("contrato_producto")
-                .select("id_tipo_cenizario, contrato:contrato(estado_contrato)")
+                .select("id_tipo_cenizario, contrato:contrato(estado_contrato)", { count: "exact" })
                 .eq("tipo_producto", "CENIZARIO")
-                .in("id_tipo_cenizario", cenizarioIds)
-            : Promise.resolve({ data: [], error: null }),
+                .in("id_tipo_cenizario", ids).order("id_contrato_producto").range(from, to)),
         ]);
 
         if (lotContracts.error) throw lotContracts.error;

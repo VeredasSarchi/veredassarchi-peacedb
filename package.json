@@ -4,6 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
+    "test:garden-availability": "node --test tests/garden-availability.test.mjs",
     "test:garden-rows": "node --test tests/garden-rows.test.mjs",
     "dev": "vite",
     "build": "vite build",

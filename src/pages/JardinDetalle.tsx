@@ -32,6 +32,7 @@ import { useAuth } from "@/auth/AuthContext";
 import { toLocalCalendarDateValue } from "@/lib/calendar-date";
 import { GardenRowsDialog } from "@/components/GardenRowsDialog";
 import { groupLotsByRows, normalizeRowIdentifier, type GardenRow } from "@/lib/garden-rows";
+import { fetchAllByIds, fetchAllPages } from "@/lib/supabase-pagination";
 
 type Jardin = Tables<"jardin">;
 type Lote = Tables<"lote">;
@@ -198,8 +199,9 @@ export default function JardinDetalle() {
         return;
       }
 
-      const { data: rowsData, error: rowsError } = await supabase
-        .from("jardin_fila").select("*").eq("id_jardin", gardenId).order("orden");
+      const { data: rowsData, error: rowsError } = await fetchAllPages((from, to) => supabase
+        .from("jardin_fila").select("*", { count: "exact" }).eq("id_jardin", gardenId)
+        .order("orden").order("id_jardin_fila").range(from, to));
       if (rowsError) {
         if (isMounted) {
           setError("No se pudieron cargar las filas del jardin.");
@@ -221,11 +223,11 @@ export default function JardinDetalle() {
         return;
       }
 
-      const { data: lotesData, error: lotesError } = await supabase
+      const { data: lotesData, error: lotesError } = await fetchAllPages((from, to) => supabase
         .from("lote")
-        .select("*")
+        .select("*", { count: "exact" })
         .eq("id_jardin", gardenId)
-        .order("id_lote", { ascending: true });
+        .order("id_lote", { ascending: true }).range(from, to));
 
       if (lotesError) {
         if (isMounted) {
@@ -242,11 +244,11 @@ export default function JardinDetalle() {
       if (lotesData && lotesData.length > 0) {
         const loteIds = lotesData.map((lote) => lote.id_lote);
 
-        const { data: contratosData, error: contratosError } = await supabase
+        const { data: contratosData, error: contratosError } = await fetchAllByIds(loteIds, (ids, from, to) => supabase
           .from("contrato_producto")
-          .select("id_lote, contrato:contrato(estado_contrato)")
+          .select("id_lote, contrato:contrato(estado_contrato)", { count: "exact" })
           .eq("tipo_producto", "LOTE")
-          .in("id_lote", loteIds);
+          .in("id_lote", ids).order("id_contrato_producto").range(from, to));
 
         if (contratosError) {
           if (isMounted) {
@@ -273,11 +275,11 @@ export default function JardinDetalle() {
           }
         });
 
-        const { data: espacios, error: espaciosError } = await supabase
+        const { data: espacios, error: espaciosError } = await fetchAllByIds(loteIds, (ids, from, to) => supabase
           .from("lote_espacio")
-          .select("*")
-          .in("id_lote", loteIds)
-          .order("numero_espacio", { ascending: true });
+          .select("*", { count: "exact" })
+          .in("id_lote", ids)
+          .order("numero_espacio", { ascending: true }).order("id_lote_espacio").range(from, to));
 
         if (espaciosError) {
           if (isMounted) {
@@ -290,11 +292,11 @@ export default function JardinDetalle() {
         espaciosData = (espacios ?? []) as LoteEspacio[];
       }
 
-      const { data: cenizariosRaw, error: cenizariosError } = await supabase
+      const { data: cenizariosRaw, error: cenizariosError } = await fetchAllPages((from, to) => supabase
         .from("tipo_cenizario")
-        .select("*")
+        .select("*", { count: "exact" })
         .eq("id_jardin", gardenId)
-        .order("numero_cenizario", { ascending: true });
+        .order("numero_cenizario", { ascending: true }).order("id_tipo_cenizario").range(from, to));
 
       if (cenizariosError) {
         if (isMounted) {
@@ -308,11 +310,11 @@ export default function JardinDetalle() {
 
       if (cenizariosData.length > 0) {
         const cenizarioIds = cenizariosData.map((cenizario) => cenizario.id_tipo_cenizario);
-        const { data: cenizarioContratos, error: cenizarioContratosError } = await supabase
+        const { data: cenizarioContratos, error: cenizarioContratosError } = await fetchAllByIds(cenizarioIds, (ids, from, to) => supabase
           .from("contrato_producto")
-          .select("id_tipo_cenizario, contrato:contrato(estado_contrato)")
+          .select("id_tipo_cenizario, contrato:contrato(estado_contrato)", { count: "exact" })
           .eq("tipo_producto", "CENIZARIO")
-          .in("id_tipo_cenizario", cenizarioIds);
+          .in("id_tipo_cenizario", ids).order("id_contrato_producto").range(from, to));
 
         if (cenizarioContratosError) {
           if (isMounted) {
