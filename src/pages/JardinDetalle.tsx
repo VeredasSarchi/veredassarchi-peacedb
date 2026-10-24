@@ -30,6 +30,8 @@ import {
 import { Checkbox } from "@/components/ui/checkbox";
 import { useAuth } from "@/auth/AuthContext";
 import { toLocalCalendarDateValue } from "@/lib/calendar-date";
+import { GardenRowsDialog } from "@/components/GardenRowsDialog";
+import { groupLotsByRows, normalizeRowIdentifier, type GardenRow } from "@/lib/garden-rows";
 
 type Jardin = Tables<"jardin">;
 type Lote = Tables<"lote">;
@@ -51,7 +53,8 @@ type LoteDisplay = {
   key: string;
   label: string;
   status: LoteStatus;
-  row: number | null;
+  numero_fila_lote: string | null;
+  id_lote: number;
   idLote: number;
   isFamiliar: boolean;
 };
@@ -134,6 +137,12 @@ export default function JardinDetalle() {
 
   const [garden, setGarden] = useState<Jardin | null>(null);
   const [lots, setLots] = useState<Lote[]>([]);
+  const [gardenRows, setGardenRows] = useState<GardenRow[]>([]);
+  const [configuringRows, setConfiguringRows] = useState(false);
+  const [reload, setReload] = useState(0);
+  const [editLotRow, setEditLotRow] = useState("");
+  const [savingLotRow, setSavingLotRow] = useState(false);
+  const [rowError, setRowError] = useState<string | null>(null);
   const [lotTypes, setLotTypes] = useState<TipoLote[]>([]);
   const [spaces, setSpaces] = useState<LoteEspacio[]>([]);
   const [cenizarios, setCenizarios] = useState<TipoCenizario[]>([]);
@@ -184,6 +193,16 @@ export default function JardinDetalle() {
       if (gardenError) {
         if (isMounted) {
           setError("No se pudo cargar el jardin.");
+          setLoading(false);
+        }
+        return;
+      }
+
+      const { data: rowsData, error: rowsError } = await supabase
+        .from("jardin_fila").select("*").eq("id_jardin", gardenId).order("orden");
+      if (rowsError) {
+        if (isMounted) {
+          setError("No se pudieron cargar las filas del jardin.");
           setLoading(false);
         }
         return;
@@ -323,6 +342,7 @@ export default function JardinDetalle() {
 
       if (isMounted) {
         setGarden(gardenData ?? null);
+        setGardenRows(rowsData ?? []);
         setLots(lotesData ?? []);
         setLotTypes(tiposData ?? []);
         setSpaces(espaciosData);
@@ -338,39 +358,12 @@ export default function JardinDetalle() {
     return () => {
       isMounted = false;
     };
-  }, [gardenId]);
+  }, [gardenId, reload]);
 
-  const configuredRows = garden?.filas_lote ?? 8;
-  const maxRowFromLots = useMemo(() => {
-    if (lots.length === 0) {
-      return 0;
-    }
-    return lots.reduce((max, lote) => {
-      const row = lote.numero_fila_lote;
-      if (row === null || !Number.isInteger(row) || row < 1) {
-        return max;
-      }
-      return Math.max(max, row);
-    }, 0);
-  }, [lots]);
-  const displayRowCount = Math.max(configuredRows, maxRowFromLots || 0);
-  const displayRows = useMemo(
-    () => Array.from({ length: displayRowCount }, (_, index) => index + 1),
-    [displayRowCount]
-  );
-  const selectableRows = useMemo(
-    () => Array.from({ length: configuredRows }, (_, index) => index + 1),
-    [configuredRows]
-  );
 
   const lotesDisplay: LoteDisplay[] = useMemo(() => {
     return lots.map((lote, index) => {
-      const row =
-        lote.numero_fila_lote !== null &&
-        Number.isInteger(lote.numero_fila_lote) &&
-        lote.numero_fila_lote > 0
-          ? lote.numero_fila_lote
-          : null;
+      const row = lote.numero_fila_lote === null ? null : normalizeRowIdentifier(lote.numero_fila_lote);
       const tipoLote = lotTypes.find((tipo) => tipo.id_tipo_lote === lote.id_tipo_lote);
       const isFamiliar =
         (tipoLote?.descripcion || "").toLowerCase().trim() === "familiar";
@@ -393,20 +386,15 @@ export default function JardinDetalle() {
         key: String(lote.id_lote),
         label: lote.numero_lote || `L-${String(index + 1).padStart(3, "0")}`,
         status,
-        row,
+        numero_fila_lote: row,
+        id_lote: lote.id_lote,
         idLote: lote.id_lote,
         isFamiliar,
       };
     });
   }, [lots, spaces, lotTypes, contractStatusByLot]);
 
-  const displayRowKeys = useMemo<(number | null)[]>(
-    () => [
-      ...displayRows,
-      ...(lotesDisplay.some((lote) => lote.row === null) ? [null] : []),
-    ],
-    [displayRows, lotesDisplay]
-  );
+  const rowGroups = groupLotsByRows(gardenRows, lotesDisplay);
 
   const cenizariosDisplay: CenizarioDisplay[] = useMemo(() => {
     return cenizarios.map((cenizario) => {
@@ -451,7 +439,7 @@ export default function JardinDetalle() {
     if (!isAdmin) {
       return;
     }
-    if (!garden || !Number.isFinite(gardenId)) {
+    if (!garden || garden.id_jardin !== gardenId || !Number.isFinite(gardenId)) {
       setError("No se pudo identificar el jardin.");
       return;
     }
@@ -461,11 +449,11 @@ export default function JardinDetalle() {
       return;
     }
 
-    const rowNumber = Number(formRow);
+    const rowIdentifier = normalizeRowIdentifier(formRow);
     const capacity = 2;
 
-    if (!Number.isInteger(rowNumber) || rowNumber < 1 || rowNumber > configuredRows) {
-      setError(`La fila debe estar entre 1 y ${configuredRows}.`);
+    if (!gardenRows.some((row) => row.id_jardin === gardenId && row.identificador === rowIdentifier)) {
+      setError("Selecciona una fila configurada para este jardin.");
       return;
     }
 
@@ -511,7 +499,7 @@ export default function JardinDetalle() {
       .insert({
         id_jardin: gardenId,
         id_tipo_lote: tipo.id_tipo_lote,
-        numero_fila_lote: rowNumber,
+        numero_fila_lote: rowIdentifier,
         numero_lote: normalizedName,
       })
       .select("*")
@@ -554,6 +542,29 @@ export default function JardinDetalle() {
     setSaving(false);
   }
 
+  async function handleSaveLotRow() {
+    if (!isAdmin || !selectedLot || selectedLot.id_jardin !== gardenId) return;
+    const identifier = normalizeRowIdentifier(editLotRow);
+    if (!gardenRows.some((row) => row.id_jardin === gardenId && row.identificador === identifier)) {
+      setRowError("Selecciona una fila configurada para este jardin.");
+      return;
+    }
+    setSavingLotRow(true);
+    setRowError(null);
+    try {
+      const { data, error: saveError } = await supabase.from("lote")
+        .update({ numero_fila_lote: identifier })
+        .eq("id_lote", selectedLot.id_lote).eq("id_jardin", gardenId).select("*").single();
+      if (saveError) throw saveError;
+      setLots((previous) => previous.map((lot) => lot.id_lote === data.id_lote ? data : lot));
+      setSelectedLot(data);
+    } catch {
+      setRowError("No se pudo actualizar la fila del lote.");
+    } finally {
+      setSavingLotRow(false);
+    }
+  }
+
   function openOccupantDialog(lote: Lote) {
     const lotSpaces = spaces
       .filter((space) => space.id_lote === lote.id_lote)
@@ -567,6 +578,8 @@ export default function JardinDetalle() {
     }));
 
     setSelectedLot(lote);
+    setEditLotRow(lote.numero_fila_lote ?? "");
+    setRowError(null);
     setOccupantDrafts(drafts);
     setIsOccupantDialogOpen(true);
   }
@@ -743,7 +756,11 @@ export default function JardinDetalle() {
             </Button>
             {isAdmin && (
               <>
+                <Button variant="outline" disabled={loading || !!error} onClick={() => setConfiguringRows(true)}>
+                  Configurar filas
+                </Button>
                 <Button
+                  disabled={loading || !!error || gardenRows.length === 0}
                   onClick={() => setIsDialogOpen(true)}
                   className="bg-secondary text-secondary-foreground hover:bg-secondary/90"
                 >
@@ -774,7 +791,7 @@ export default function JardinDetalle() {
               {loading && <div className="text-sm text-muted-foreground">Cargando...</div>}
               {error && <div className="text-sm text-destructive">{error}</div>}
 
-              {!loading && !error && (lotesDisplay.length === 0 ? (
+              {!loading && !error && (rowGroups.length === 0 ? (
                 <div className="rounded-lg border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
                   No hay lotes registrados en este jardin.
                 </div>
@@ -804,15 +821,15 @@ export default function JardinDetalle() {
                   </div>
 
                   <div className="space-y-3">
-                  {displayRowKeys.map((rowNumber) => {
-                      const rowItems = lotesDisplay.filter((lote) => lote.row === rowNumber);
+                  {rowGroups.map(({ identifier: rowIdentifier, configured, lots: rowItems }) => {
                       return (
                         <div
-                          key={rowNumber === null ? "row-unassigned" : `row-${rowNumber}`}
+                          key={rowIdentifier === null ? "row-unassigned" : `row-${rowIdentifier}`}
                           className="flex items-start gap-3"
                         >
                           <div className="w-14 shrink-0 text-xs font-semibold text-muted-foreground pt-2">
-                            {rowNumber === null ? "Sin fila" : `F${rowNumber}`}
+                            {rowIdentifier === null ? "Sin fila asignada" : `Fila ${rowIdentifier}`}
+                            {rowIdentifier !== null && !configured && " (sin configurar)"}
                           </div>
                           <div className="grid grid-cols-6 sm:grid-cols-8 md:grid-cols-10 gap-2 flex-1">
                             {rowItems.length === 0 ? (
@@ -960,9 +977,9 @@ export default function JardinDetalle() {
                   <SelectValue placeholder="Selecciona una fila" />
                 </SelectTrigger>
                 <SelectContent>
-                  {selectableRows.map((rowNumber) => (
-                    <SelectItem key={`row-${rowNumber}`} value={String(rowNumber)}>
-                      Fila {rowNumber}
+                  {gardenRows.map((row) => (
+                    <SelectItem key={row.id_jardin_fila} value={row.identificador}>
+                      Fila {row.identificador}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -1061,17 +1078,44 @@ export default function JardinDetalle() {
       </Dialog>
       )}
 
+      {isAdmin && configuringRows && garden && (
+        <GardenRowsDialog garden={garden} rows={gardenRows}
+          onClose={() => setConfiguringRows(false)}
+          onSaved={(updatedGarden, updatedRows) => {
+            setGarden(updatedGarden);
+            setGardenRows(updatedRows);
+            setReload((value) => value + 1);
+          }}
+        />
+      )}
+
       {isAdmin && (
-        <Dialog open={isOccupantDialogOpen} onOpenChange={setIsOccupantDialogOpen}>
+        <Dialog open={isOccupantDialogOpen} onOpenChange={(open) => { if (!savingLotRow) setIsOccupantDialogOpen(open); }}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Espacios del lote</DialogTitle>
+            <DialogTitle>Fila y espacios del lote</DialogTitle>
             <DialogDescription>
               {selectedLot?.numero_lote || "Lote"}
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>Fila del lote</Label>
+              <Select value={editLotRow} onValueChange={setEditLotRow} disabled={savingLotRow}>
+                <SelectTrigger><SelectValue placeholder="Sin fila asignada" /></SelectTrigger>
+                <SelectContent>
+                  {gardenRows.map((row) => (
+                    <SelectItem key={row.id_jardin_fila} value={row.identificador}>Fila {row.identificador}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Button variant="outline" onClick={handleSaveLotRow}
+                disabled={savingLotRow || !editLotRow || editLotRow === selectedLot?.numero_fila_lote}>
+                {savingLotRow ? "Guardando fila..." : "Guardar fila"}
+              </Button>
+              {rowError && <p role="alert" className="text-sm text-destructive">{rowError}</p>}
+            </div>
             {occupantDrafts.length === 0 ? (
               <p className="text-sm text-muted-foreground">
                 Este lote no tiene espacios creados.

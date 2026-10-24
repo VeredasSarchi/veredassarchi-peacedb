@@ -1920,29 +1920,48 @@ export type Database = {
         }
         Relationships: []
       }
+      jardin_fila: {
+        Row: { id_jardin_fila: number; id_jardin: number; identificador: string; orden: number }
+        Insert: { id_jardin_fila?: number; id_jardin: number; identificador: string; orden: number }
+        Update: { id_jardin_fila?: number; id_jardin?: number; identificador?: string; orden?: number }
+        Relationships: [{
+          foreignKeyName: "jardin_fila_id_jardin_fkey"
+          columns: ["id_jardin"]
+          isOneToOne: false
+          referencedRelation: "jardin"
+          referencedColumns: ["id_jardin"]
+        }]
+      }
       lote: {
         Row: {
           id_jardin: number
           id_lote: number
           id_tipo_lote: number
-          numero_fila_lote: number | null
+          numero_fila_lote: string | null
           numero_lote: string
         }
         Insert: {
           id_jardin: number
           id_lote?: number
           id_tipo_lote: number
-          numero_fila_lote?: number | null
+          numero_fila_lote?: string | null
           numero_lote: string
         }
         Update: {
           id_jardin?: number
           id_lote?: number
           id_tipo_lote?: number
-          numero_fila_lote?: number | null
+          numero_fila_lote?: string | null
           numero_lote?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "fk_lote_jardin_fila"
+            columns: ["id_jardin", "numero_fila_lote"]
+            isOneToOne: false
+            referencedRelation: "jardin_fila"
+            referencedColumns: ["id_jardin", "identificador"]
+          },
           {
             foreignKeyName: "fk_lote_jardin"
             columns: ["id_jardin"]
@@ -2381,6 +2400,14 @@ export type Database = {
       }
     }
     Functions: {
+      eliminar_jardin_con_filas: {
+        Args: { p_id_jardin: number; p_nombre_confirmacion: string }
+        Returns: number
+      }
+      guardar_jardin_con_filas: {
+        Args: { p_id_jardin: number | null; p_nombre: string; p_filas: Json }
+        Returns: Json
+      }
       asociar_usuario_vendedor_referidos: {
         Args: { p_id_usuario: string; p_id_vendedor?: number | null }
         Returns: Json

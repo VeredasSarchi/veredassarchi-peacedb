@@ -35,6 +35,7 @@ import type { Tables, TablesInsert } from "@/integrations/supabase/types";
 import { calculateMaintenanceVat, MAINTENANCE_VAT_RATE } from "@/lib/maintenance-vat";
 import { PAYMENT_METHOD_OPTIONS } from "@/lib/payment-methods";
 import { toast } from "sonner";
+import { groupLotsByRows, type GardenRow } from "@/lib/garden-rows";
 
 const preClienteSchema = z.object({
   numero_formulario: z.string().optional(),
@@ -85,7 +86,6 @@ type Jardin = Tables<"jardin">;
 type Lote = Tables<"lote">;
 type TipoLote = Tables<"tipo_lote">;
 
-const UNASSIGNED_ROW_KEY = "sin-fila";
 type TipoCenizario = Tables<"tipo_cenizario">;
 type TipoCremacion = Tables<"tipo_cremacion">;
 type PaqueteFunerario = Tables<"paquete_funerario">;
@@ -338,6 +338,7 @@ export function PreClienteForm({
 }: PreClienteFormProps) {
   const [jardines, setJardines] = useState<Jardin[]>([]);
   const [lotes, setLotes] = useState<Lote[]>([]);
+  const [gardenRows, setGardenRows] = useState<GardenRow[]>([]);
   const [tiposLote, setTiposLote] = useState<TipoLote[]>([]);
   const [tiposCenizario, setTiposCenizario] = useState<TipoCenizario[]>([]);
   const [tiposCremacion, setTiposCremacion] = useState<TipoCremacion[]>([]);
@@ -561,31 +562,9 @@ export function PreClienteForm({
     }, {} as Record<number, CenizarioStatus>);
   }, [cenizariosDelJardin, contractStatusByCenizario]);
 
-  const lotesPorFila = useMemo(() => {
-    const grouped: Record<string, Lote[]> = {};
-    lotesDelJardin.forEach((lote) => {
-      const row = lote.numero_fila_lote;
-      const rowKey =
-        row !== null && Number.isInteger(row) && row > 0
-          ? String(row)
-          : UNASSIGNED_ROW_KEY;
-      if (!grouped[rowKey]) {
-        grouped[rowKey] = [];
-      }
-      grouped[rowKey].push(lote);
-    });
-
-    return grouped;
-  }, [lotesDelJardin]);
-
-  const filasLotes = useMemo(
-    () =>
-      Object.keys(lotesPorFila).sort((a, b) => {
-        if (a === UNASSIGNED_ROW_KEY) return 1;
-        if (b === UNASSIGNED_ROW_KEY) return -1;
-        return Number(a) - Number(b);
-      }),
-    [lotesPorFila]
+  const rowGroups = groupLotsByRows(
+    gardenRows.filter((row) => String(row.id_jardin) === selectedJardin),
+    lotesDelJardin,
   );
 
   useEffect(() => {
@@ -618,6 +597,7 @@ export function PreClienteForm({
       try {
         const [
           jardinesRes,
+          filasRes,
           lotesRes,
           tiposLoteRes,
           tiposCenizarioRes,
@@ -626,6 +606,7 @@ export function PreClienteForm({
           vendedoresRes,
         ] = await Promise.all([
           supabase.from("jardin").select("*").order("nombre"),
+          supabase.from("jardin_fila").select("*").order("orden"),
           supabase.from("lote").select("*").order("id_lote", { ascending: true }),
           supabase.from("tipo_lote").select("*").order("descripcion"),
           supabase.from("tipo_cenizario").select("*").order("numero_cenizario"),
@@ -635,6 +616,7 @@ export function PreClienteForm({
         ]);
 
         if (jardinesRes.error) throw jardinesRes.error;
+        if (filasRes.error) throw filasRes.error;
         if (lotesRes.error) throw lotesRes.error;
         if (tiposLoteRes.error) throw tiposLoteRes.error;
         if (tiposCenizarioRes.error) throw tiposCenizarioRes.error;
@@ -689,6 +671,7 @@ export function PreClienteForm({
         }
 
         setJardines(jardinesData);
+        setGardenRows(filasRes.data ?? []);
         setLotes(lotesData);
         setTiposLote(tiposLoteData);
         setTiposCenizario(cenizariosData);
@@ -1559,18 +1542,22 @@ export function PreClienteForm({
                 <p className="text-xs font-semibold text-text-primary">
                   Lotes por fila
                 </p>
-                {filasLotes.length === 0 ? (
+                {rowGroups.length === 0 ? (
                   <p className="text-xs text-muted-foreground">
                     No hay lotes registrados.
                   </p>
                 ) : (
-                  filasLotes.map((fila) => (
-                    <div key={`fila-${fila}`} className="flex items-start gap-3">
+                  rowGroups.map(({ identifier, configured, lots: rowLots }) => (
+                    <div key={identifier ?? "sin-fila"} className="flex items-start gap-3">
                       <div className="w-14 shrink-0 pt-2 text-xs font-bold text-text-secondary">
-                        {fila === UNASSIGNED_ROW_KEY ? "Sin fila" : `F${fila}`}
+                        {identifier === null ? "Sin fila asignada" : `Fila ${identifier}`}
+                        {identifier !== null && !configured && " (sin configurar)"}
                       </div>
                       <div className="grid flex-1 grid-cols-3 gap-2 sm:grid-cols-5 md:grid-cols-8">
-                        {(lotesPorFila[fila] ?? []).map((lote) => {
+                        {rowLots.length === 0 && (
+                          <span className="text-xs text-muted-foreground">Sin lotes en esta fila.</span>
+                        )}
+                        {rowLots.map((lote) => {
                           const isSelected = selectedLoteIds.includes(String(lote.id_lote));
                           const status = lotStatus[lote.id_lote];
                           const clickedIsFamily = isFamilyLot(lote);

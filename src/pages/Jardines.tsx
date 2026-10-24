@@ -4,18 +4,10 @@ import { supabase } from "@/integrations/supabase/client";
 import type { Tables } from "@/integrations/supabase/types";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Trees } from "lucide-react";
+import { Trees, Trash2 } from "lucide-react";
 import { useAuth } from "@/auth/AuthContext";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { GardenRowsDialog } from "@/components/GardenRowsDialog";
+import { DeleteGardenDialog } from "@/components/DeleteGardenDialog";
 
 type Jardin = Tables<"jardin">;
 
@@ -49,9 +41,7 @@ export default function Jardines() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [gardenName, setGardenName] = useState("");
-  const [gardenRows, setGardenRows] = useState("8");
-  const [saving, setSaving] = useState(false);
+  const [gardenToDelete, setGardenToDelete] = useState<Jardin | null>(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -172,48 +162,6 @@ export default function Jardines() {
     };
   }, []);
 
-  async function handleCreateGarden() {
-    if (!gardenName.trim()) {
-      setError("Ingresa un nombre de jardin.");
-      return;
-    }
-
-    const rowsValue = Number(gardenRows);
-    if (!Number.isFinite(rowsValue) || rowsValue < 1) {
-      setError("Ingresa una cantidad de filas valida.");
-      return;
-    }
-
-    setSaving(true);
-    setError(null);
-
-    const { data: newGarden, error: insertError } = await supabase
-      .from("jardin")
-      .insert({ nombre: gardenName.trim(), filas_lote: rowsValue })
-      .select("*")
-      .single();
-
-    if (insertError) {
-      setError("No se pudo crear el jardin.");
-      setSaving(false);
-      return;
-    }
-
-    if (newGarden) {
-      setGardens((prev) =>
-        [...prev, newGarden].sort((a, b) => a.nombre.localeCompare(b.nombre))
-      );
-      setGardenStats((prev) => ({
-        ...prev,
-        [newGarden.id_jardin]: { lotesDisponibles: 0, cenizariosDisponibles: 0 },
-      }));
-    }
-
-    setGardenName("");
-    setGardenRows("8");
-    setIsDialogOpen(false);
-    setSaving(false);
-  }
 
   return (
     <div className="app-page">
@@ -275,6 +223,14 @@ export default function Jardines() {
                     >
                       Ver lotes
                     </Button>
+                    {isAdmin && (
+                      <Button variant="outline"
+                        className="mt-2 w-full text-destructive hover:bg-destructive/10 hover:text-destructive"
+                        onClick={() => setGardenToDelete(garden)}>
+                        <Trash2 className="mr-2 h-4 w-4" />
+                        Eliminar jardín
+                      </Button>
+                    )}
                   </CardContent>
                 </Card>
               ))}
@@ -283,45 +239,31 @@ export default function Jardines() {
         </Card>
       </div>
 
-      {isAdmin && (
-        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Agregar jardin</DialogTitle>
-              <DialogDescription>
-                Ingresa el nombre del nuevo jardin.
-              </DialogDescription>
-            </DialogHeader>
+      {isAdmin && gardenToDelete && (
+        <DeleteGardenDialog key={gardenToDelete.id_jardin} garden={gardenToDelete}
+          onClose={() => setGardenToDelete(null)}
+          onDeleted={(id) => {
+            setGardens((previous) => previous.filter((garden) => garden.id_jardin !== id));
+            setGardenStats((previous) => {
+              const next = { ...previous };
+              delete next[id];
+              return next;
+            });
+          }}
+        />
+      )}
 
-            <div className="space-y-2">
-              <Label>Nombre del jardin</Label>
-              <Input
-                placeholder="Ej: La Esperanza"
-                value={gardenName}
-                onChange={(event) => setGardenName(event.target.value)}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Cantidad de filas de lotes</Label>
-              <Input
-                type="number"
-                min="1"
-                placeholder="Ej: 8"
-                value={gardenRows}
-                onChange={(event) => setGardenRows(event.target.value)}
-              />
-            </div>
-
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setIsDialogOpen(false)} disabled={saving}>
-                Cancelar
-              </Button>
-              <Button onClick={handleCreateGarden} disabled={saving}>
-                {saving ? "Guardando..." : "Guardar jardin"}
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+      {isAdmin && isDialogOpen && (
+        <GardenRowsDialog
+          onClose={() => setIsDialogOpen(false)}
+          onSaved={(newGarden) => {
+            setGardens((previous) => [...previous, newGarden].sort((a, b) => a.nombre.localeCompare(b.nombre)));
+            setGardenStats((previous) => ({
+              ...previous,
+              [newGarden.id_jardin]: { lotesDisponibles: 0, cenizariosDisponibles: 0 },
+            }));
+          }}
+        />
       )}
     </div>
   );
